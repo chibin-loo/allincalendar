@@ -1,4 +1,5 @@
 package com.artlu;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -189,6 +190,16 @@ public class Main {
         return true;
     }
 
+    // Pulls "HH:mm" out of something like 2026-01-20T10:30:00, or "" if there's no
+    // time
+    static String extractTime(String iso) {
+        int t = iso.indexOf("T");
+        if (t >= 0 && iso.length() >= t + 6) {
+            return iso.substring(t + 1, t + 6); // the "10:30" part
+        }
+        return "";
+    }
+
     // Reads an iCalendar link and adds all events to the list
     static void addEvents(String link, List<Event> events) throws Exception {
 
@@ -196,51 +207,39 @@ public class Main {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder().uri(URI.create(link)).build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        String[] lines = response.body().split("\n");
 
-        String name = "";
-        String date = "";
+        net.fortuna.ical4j.data.CalendarBuilder builder = new net.fortuna.ical4j.data.CalendarBuilder();
+        net.fortuna.ical4j.model.Calendar calendar = builder.build(new java.io.StringReader(response.body()));
 
-        // parse the iCalendar file line by line
-        for (String rawLine : lines) {
-            String line = rawLine.trim();
-            if (line.startsWith("SUMMARY:")) {
-                name = line.substring(8);
-            }
-            if (line.startsWith("DTSTART")) {
-                int colon = line.indexOf(":");
-                date = line.substring(colon + 1);
-            }
-            // add each event to list
-            if (line.startsWith("END:VEVENT")) {
+        // The window of time we care about: from today to 4 months ahead
+        java.time.LocalDateTime startDay = java.time.LocalDate.now().atStartOfDay();
+        java.time.LocalDateTime endDay = startDay.plusMonths(4);
+
+        net.fortuna.ical4j.model.Period<java.time.LocalDateTime> period = new net.fortuna.ical4j.model.Period<>(
+                startDay,
+                endDay);
+
+        // Go through each event in the calendar
+        for (net.fortuna.ical4j.model.component.CalendarComponent component : calendar.getComponents("VEVENT")) {
+            net.fortuna.ical4j.model.component.VEvent vevent = (net.fortuna.ical4j.model.component.VEvent) component;
+
+            String name = vevent.getSummary().map(s -> s.getValue()).orElse("(no title)");
+
+            // Ask ical4j for every occurrence in our time window (expands recurring
+            // events!)
+            var occurrences = vevent.calculateRecurrenceSet(period);
+
+            for (var occurrence : occurrences) {
+                java.time.temporal.Temporal start = occurrence.getStart();
+                String isoDate = start.toString();
+
                 Event e = new Event();
                 e.name = name;
-                e.date = prettyDate(date);
-                e.time = prettyTime(date);
+                e.date = isoDate.length() >= 10 ? isoDate.substring(0, 10) : isoDate;
+                e.time = extractTime(isoDate);
                 events.add(e);
-                name = "";
-                date = "";
             }
         }
-    }
-
-    // process dates
-    static String prettyDate(String raw) {
-        if (raw.length() >= 8) {
-            return raw.substring(0, 4) + "-" + raw.substring(4, 6) + "-" + raw.substring(6, 8);
-        }
-        return raw;
-    }
-
-    // process times
-    static String prettyTime(String raw) {
-        int t = raw.indexOf("T");
-        if (t >= 0 && raw.length() >= t + 5) {
-            String hh = raw.substring(t + 1, t + 3);
-            String mm = raw.substring(t + 3, t + 5);
-            return hh + ":" + mm;
-        }
-        return "";
     }
 
     // check if event is happening today
