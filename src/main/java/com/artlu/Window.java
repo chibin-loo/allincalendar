@@ -1,4 +1,5 @@
 package com.artlu;
+
 import javax.swing.JFrame;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -12,6 +13,7 @@ import java.util.List;
 
 public class Window {
     static List<Event> currentEvents = new ArrayList<>();
+    static boolean showPast = false; // are we currently showing past events?
 
     public static void main(String[] args) {
         try {
@@ -34,17 +36,20 @@ public class Window {
         JButton removeButton = new JButton("Remove");
         JButton doneButton = new JButton("Mark Done");
         JButton refreshButton = new JButton("Refresh");
-        JPanel buttonPanel = new JPanel();
+        JButton togglePastButton = new JButton("Show Past");
+        JPanel buttonPanel = new JPanel(new java.awt.GridLayout(0, 3, 5, 5));
         buttonPanel.add(addButton);
         buttonPanel.add(removeButton);
         buttonPanel.add(doneButton);
         buttonPanel.add(refreshButton);
+        buttonPanel.add(togglePastButton);
         frame.add(buttonPanel, BorderLayout.SOUTH);
 
         refreshButton.addActionListener(clickEvent -> refresh(model));
         addButton.addActionListener(clickEvent -> addTask(frame, model));
         removeButton.addActionListener(clickEvent -> removeSelected(list, model));
         doneButton.addActionListener(clickEvent -> markDone(list, model));
+        togglePastButton.addActionListener(clickEvent -> togglePast(model, togglePastButton));
 
         frame.setVisible(true);
         javax.swing.SwingUtilities.invokeLater(() -> refresh(model));
@@ -89,6 +94,9 @@ public class Window {
             currentEvents = Main.buildEventList();
             model.clear();
             for (Event e : currentEvents) {
+                if (!showPast && Main.isPast(e.date, e.time)) {
+                    continue;
+                }
                 String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
                 String mark = e.done ? " [done]" : "";
                 model.addElement(when + "   " + e.name + mark);
@@ -124,6 +132,12 @@ public class Window {
         }
         currentEvents.get(row).done = true;
         saveAndRefresh(model);
+    }
+
+    static void togglePast(DefaultListModel<String> model, JButton togglePastButton) {
+        showPast = !showPast;
+        togglePastButton.setText(showPast ? "Hide Past" : "Show Past");
+        refresh(model);
     }
 
 }
