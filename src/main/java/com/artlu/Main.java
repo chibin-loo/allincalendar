@@ -211,22 +211,19 @@ public class Main {
         net.fortuna.ical4j.data.CalendarBuilder builder = new net.fortuna.ical4j.data.CalendarBuilder();
         net.fortuna.ical4j.model.Calendar calendar = builder.build(new java.io.StringReader(response.body()));
 
-        // The window of time we care about: from today to 4 months ahead
-        java.time.LocalDateTime startDay = java.time.LocalDate.now().atStartOfDay();
-        java.time.LocalDateTime endDay = startDay.plusMonths(4);
+        // The window of time we care about: from today to 4 months ahead (as
+        // date-times)
+        java.time.LocalDateTime startTime = java.time.LocalDate.now().minusMonths(1).atStartOfDay();
+        java.time.LocalDateTime endTime = java.time.LocalDate.now().plusMonths(4).atStartOfDay();
 
         net.fortuna.ical4j.model.Period<java.time.LocalDateTime> period = new net.fortuna.ical4j.model.Period<>(
-                startDay,
-                endDay);
+                startTime, endTime);
 
-        // Go through each event in the calendar
         for (net.fortuna.ical4j.model.component.CalendarComponent component : calendar.getComponents("VEVENT")) {
             net.fortuna.ical4j.model.component.VEvent vevent = (net.fortuna.ical4j.model.component.VEvent) component;
 
             String name = vevent.getSummary().map(s -> s.getValue()).orElse("(no title)");
 
-            // Ask ical4j for every occurrence in our time window (expands recurring
-            // events!)
             var occurrences = vevent.calculateRecurrenceSet(period);
 
             for (var occurrence : occurrences) {
