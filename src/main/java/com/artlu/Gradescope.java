@@ -78,8 +78,14 @@ public class Gradescope {
             org.jsoup.nodes.Element dueCell = row.selectFirst(".submissionTimeChart--dueDate");
             String due = (dueCell == null) ? "" : dueCell.attr("datetime");
 
-            if (due.isBlank())
-                continue; // skip assignments with no due date
+            if (due.isBlank()) {
+                continue;
+            }
+
+            String date = due.substring(0, 10);
+            if (!Main.inWindow(date)) {
+                continue;
+            }
 
             Event e = new Event();
             e.name = name;
