@@ -18,11 +18,15 @@ public class Main {
     static List<Event> buildEventList() throws Exception {
         List<Event> events = new ArrayList<>();
 
-        List<String> calendarLinks = Files.readAllLines(Paths.get("links.txt"));
-        for (String link : calendarLinks) {
-            if (link.isBlank())
-                continue;
-            addEvents(link, events);
+        // Calendar links now come from settings
+        String brightspace = Settings.get("brightspace", "");
+        String google = Settings.get("google", "");
+
+        if (!brightspace.isBlank()) {
+            addEvents(brightspace, events);
+        }
+        if (!google.isBlank()) {
+            addEvents(google, events);
         }
 
         loadTasks(events);
