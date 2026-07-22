@@ -100,12 +100,27 @@ public class Window {
     // Re-downloads everything from the internet, then redraws. Slow — only on
     // demand.
     static void reload(DefaultListModel<String> model) {
-        try {
-            currentEvents = Main.buildEventList(); // the slow network part
-            redraw(model);
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
+        model.clear();
+        model.addElement("Loading...");
+
+        new javax.swing.SwingWorker<List<Event>, Void>() {
+            // Runs on a BACKGROUND thread — slow work goes here
+            protected List<Event> doInBackground() throws Exception {
+                return Main.buildEventList();
+            }
+
+            // Runs on the DRAWING thread once the background work finishes
+            protected void done() {
+                try {
+                    currentEvents = get(); // the result from doInBackground
+                    redraw(model);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    model.clear();
+                    model.addElement("Failed to load - see console");
+                }
+            }
+        }.execute();
     }
 
     // Just redraws the list from data we already have. Fast — no network.

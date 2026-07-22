@@ -13,12 +13,12 @@ public class Gradescope {
 
     // Logs in and returns the session cookies needed for later requests
     static Map<String, String> login() throws Exception {
-        List<String> lines = Files.readAllLines(Paths.get("gradescope.txt"));
-        if (lines.size() < 2) {
-            throw new Exception("gradescope.txt needs two lines: email on the first, password on the second.");
+
+        String email = Settings.get("gradescope_email", "");
+        String password = Settings.get("gradescope_password", "");
+        if (email.isBlank() || password.isBlank()) {
+            throw new Exception("Gradescope email/password not set in settings.");
         }
-        String email = lines.get(0).trim();
-        String password = lines.get(1).trim();
 
         // Step 1: load the login page to get its hidden token and first cookies
         Connection.Response loginPage = Jsoup.connect("https://www.gradescope.com/login")
@@ -94,8 +94,8 @@ public class Gradescope {
 
     // Logs in and adds every dated assignment to the list
     static void addGradescopeEvents(List<Event> events) throws Exception {
-        if (!Files.exists(Paths.get("gradescope.txt"))) {
-            return; // no credentials, skip silently
+        if (Settings.get("gradescope_email", "").isBlank()) {
+            return; // not configured, skip
         }
         Map<String, String> cookies = login();
         Map<String, String> courses = getCourses(cookies);
