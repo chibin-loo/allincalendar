@@ -2,6 +2,7 @@ package com.artlu;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.jsoup.Connection;
@@ -61,13 +62,60 @@ public class Gradescope {
         return courses;
     }
 
+    // Scrapes one course page for its assignments
+    static void addAssignments(String courseUrl, Map<String, String> cookies, List<Event> events) throws Exception {
+        Document page = Jsoup.connect(courseUrl).cookies(cookies).get();
+
+        // Assignments live as rows in a table
+        for (org.jsoup.nodes.Element row : page.select("table#assignments-student-table tbody tr")) {
+            // The name is in the first cell, sometimes wrapped in a link
+            org.jsoup.nodes.Element nameCell = row.selectFirst("th");
+            if (nameCell == null)
+                continue;
+            String name = nameCell.text().trim();
+
+            // The due date is in a element with a datetime attribute
+            org.jsoup.nodes.Element dueCell = row.selectFirst(".submissionTimeChart--dueDate");
+            String due = (dueCell == null) ? "" : dueCell.attr("datetime");
+
+            if (due.isBlank())
+                continue; // skip assignments with no due date
+
+            Event e = new Event();
+            e.name = name;
+            e.url = courseUrl;
+            e.date = due.substring(0, 10); // "2026-01-30"
+            e.time = due.substring(11, 16); // "23:00"
+            e.uid = "gradescope|" + name + "|" + e.date;
+            e.userAdded = false;
+            events.add(e);
+        }
+    }
+
+    // Logs in and adds every dated assignment to the list
+    static void addGradescopeEvents(List<Event> events) throws Exception {
+        if (!Files.exists(Paths.get("gradescope.txt"))) {
+            return; // no credentials, skip silently
+        }
+        Map<String, String> cookies = login();
+        Map<String, String> courses = getCourses(cookies);
+        for (String url : courses.values()) {
+            addAssignments(url, cookies, events);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Map<String, String> cookies = login();
         Map<String, String> courses = getCourses(cookies);
 
-        System.out.println("Found " + courses.size() + " courses:");
-        for (Map.Entry<String, String> entry : courses.entrySet()) {
-            System.out.println("  " + entry.getKey() + "  ->  " + entry.getValue());
+        List<Event> events = new ArrayList<>();
+        for (String url : courses.values()) {
+            addAssignments(url, cookies, events);
+        }
+
+        System.out.println("Collected " + events.size() + " assignments:");
+        for (Event e : events) {
+            System.out.println("  " + e.date + " " + e.time + "  " + e.name);
         }
     }
 }
