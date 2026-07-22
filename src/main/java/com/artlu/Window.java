@@ -90,7 +90,7 @@ public class Window {
     // Saves the user's tasks to match the current list, then redraws
     static void saveAndRefresh(DefaultListModel<String> model) {
         try {
-            Main.saveTasks(currentEvents, new ArrayList<>()); // write current tasks out
+            Main.saveTasks(currentEvents); // write current tasks out
             redraw(model);
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -149,7 +149,7 @@ public class Window {
 
         try {
             if (selected.userAdded) {
-                Main.saveTasks(currentEvents, new ArrayList<>());
+                Main.saveTasks(currentEvents);
             } else if (selected.done) {
                 Main.addDoneOverride(selected); // now done -> remember it
             } else {
