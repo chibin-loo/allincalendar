@@ -143,14 +143,23 @@ public class Window {
         if (row < 0) {
             return;
         }
+
         Event selected = visibleEvents.get(row);
-        if (!selected.userAdded) {
-            JOptionPane.showMessageDialog(null,
-                    "That's a calendar event — it can only be changed in Brightspace or Google.");
-            return;
+        selected.done = !selected.done; // flip it, don't force true
+
+        try {
+            if (selected.userAdded) {
+                Main.saveTasks(currentEvents, new ArrayList<>());
+            } else if (selected.done) {
+                Main.addDoneOverride(selected); // now done -> remember it
+            } else {
+                Main.removeDoneOverride(selected); // now not done -> forget it
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
-        selected.done = !selected.done;
-        saveAndRefresh(model);
+
+        redraw(model);
     }
 
     static void togglePast(DefaultListModel<String> model, JButton togglePastButton) {
