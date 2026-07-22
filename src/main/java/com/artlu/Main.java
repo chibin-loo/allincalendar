@@ -141,7 +141,12 @@ public class Main {
         }
 
         loadTasks(events);
-        // Sort by date+time so earliest comes first
+        java.util.Set<String> doneKeys = loadDoneOverrides();
+        for (Event e : events) {
+            if (!e.userAdded && doneKeys.contains(doneKey(e))) {
+                e.done = true;
+            }
+        }
         events.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
         return events;
     }
@@ -390,6 +395,49 @@ public class Main {
             end++;
         }
         return text.substring(start, end);
+    }
+
+    // Builds the key that identifies one occurrence of an imported event
+    static String doneKey(Event e) {
+        return e.uid + "|" + e.date;
+    }
+
+    // Reads the set of imported events the user has marked done
+    static java.util.Set<String> loadDoneOverrides() throws Exception {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        if (!Files.exists(Paths.get("done-overrides.txt"))) {
+            return keys; // no file yet, nothing marked
+        }
+        for (String line : Files.readAllLines(Paths.get("done-overrides.txt"))) {
+            if (!line.isBlank()) {
+                keys.add(line.trim());
+            }
+        }
+        return keys;
+    }
+
+    // Remembers that the user marked this imported event done
+    static void addDoneOverride(Event e) throws Exception {
+        List<String> line = new ArrayList<>();
+        line.add(doneKey(e));
+        Files.write(Paths.get("done-overrides.txt"), line,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    // Forgets that the user marked this imported event done
+    static void removeDoneOverride(Event e) throws Exception {
+        if (!Files.exists(Paths.get("done-overrides.txt"))) {
+            return;
+        }
+        String key = doneKey(e);
+        List<String> kept = new ArrayList<>();
+        for (String line : Files.readAllLines(Paths.get("done-overrides.txt"))) {
+            if (!line.trim().equals(key)) {
+                kept.add(line); // keep everything except this one
+            }
+        }
+        Files.write(Paths.get("done-overrides.txt"), kept);
     }
 
 }
