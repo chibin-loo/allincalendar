@@ -211,9 +211,7 @@ public class Main {
         net.fortuna.ical4j.data.CalendarBuilder builder = new net.fortuna.ical4j.data.CalendarBuilder();
         net.fortuna.ical4j.model.Calendar calendar = builder.build(new java.io.StringReader(response.body()));
 
-        // The window of time we care about: from today to 4 months ahead (as
-        // date-times)
-        java.time.LocalDateTime startTime = java.time.LocalDate.now().minusMonths(1).atStartOfDay();
+        java.time.LocalDateTime startTime = java.time.LocalDate.now().minusYears(7).atStartOfDay();
         java.time.LocalDateTime endTime = java.time.LocalDate.now().plusMonths(4).atStartOfDay();
 
         net.fortuna.ical4j.model.Period<java.time.LocalDateTime> period = new net.fortuna.ical4j.model.Period<>(
@@ -223,6 +221,16 @@ public class Main {
             net.fortuna.ical4j.model.component.VEvent vevent = (net.fortuna.ical4j.model.component.VEvent) component;
 
             String name = vevent.getSummary().map(s -> s.getValue()).orElse("(no title)");
+            String uid = vevent.getUid().map(u -> u.getValue()).orElse("");
+
+            // Purdue's feed has no URL field, so hunt for a link in the description or
+            // location
+            String description = vevent.getDescription().map(d -> d.getValue()).orElse("");
+            String location = vevent.getLocation().map(l -> l.getValue()).orElse("");
+            String url = findLink(description);
+            if (url.isBlank()) {
+                url = findLink(location);
+            }
 
             var occurrences = vevent.calculateRecurrenceSet(period);
 
@@ -234,6 +242,8 @@ public class Main {
                 e.name = name;
                 e.date = isoDate.length() >= 10 ? isoDate.substring(0, 10) : isoDate;
                 e.time = extractTime(isoDate);
+                e.url = url;
+                e.uid = uid;
                 events.add(e);
             }
         }
@@ -368,6 +378,20 @@ public class Main {
             events.add(e);
         }
     }
+
+    // Finds the first web link inside a chunk of text, or "" if there isn't one
+    static String findLink(String text) {
+        int start = text.indexOf("http");
+        if (start < 0)
+            return "";
+
+        int end = start;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
+            end++;
+        }
+        return text.substring(start, end);
+    }
+
 }
 
 // Represents a single event or task
@@ -377,4 +401,6 @@ class Event {
     String time = "";
     boolean done = false;
     boolean userAdded = false;
+    String url = "";
+    String uid = "";
 }

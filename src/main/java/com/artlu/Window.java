@@ -13,7 +13,8 @@ import java.util.List;
 
 public class Window {
     static List<Event> currentEvents = new ArrayList<>();
-    static boolean showPast = false; // are we currently showing past events?
+    static List<Event> visibleEvents = new ArrayList<>();
+    static boolean showPast = false;
 
     public static void main(String[] args) {
         try {
@@ -35,7 +36,7 @@ public class Window {
         JButton addButton = new JButton("Add Task");
         JButton removeButton = new JButton("Remove");
         JButton doneButton = new JButton("Mark Done");
-        JButton refreshButton = new JButton("Refresh");
+        JButton refreshButton = new JButton("Full Refresh");
         JButton togglePastButton = new JButton("Show Past");
         JPanel buttonPanel = new JPanel(new java.awt.GridLayout(0, 3, 5, 5));
         buttonPanel.add(addButton);
@@ -45,14 +46,21 @@ public class Window {
         buttonPanel.add(togglePastButton);
         frame.add(buttonPanel, BorderLayout.SOUTH);
 
-        refreshButton.addActionListener(clickEvent -> refresh(model));
+        refreshButton.addActionListener(clickEvent -> reload(model));
         addButton.addActionListener(clickEvent -> addTask(frame, model));
         removeButton.addActionListener(clickEvent -> removeSelected(list, model));
         doneButton.addActionListener(clickEvent -> markDone(list, model));
         togglePastButton.addActionListener(clickEvent -> togglePast(model, togglePastButton));
+        list.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent clickEvent) {
+                if (clickEvent.getClickCount() == 2) { // only react to double-clicks
+                    openSelected(list);
+                }
+            }
+        });
 
         frame.setVisible(true);
-        javax.swing.SwingUtilities.invokeLater(() -> refresh(model));
+        javax.swing.SwingUtilities.invokeLater(() -> reload(model));
     }
 
     static void addTask(JFrame frame, DefaultListModel<String> model) {
@@ -72,7 +80,8 @@ public class Window {
             e.userAdded = true;
 
             Main.saveNewTask(e);
-            refresh(model);
+            currentEvents.add(e);
+            redraw(model);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -82,27 +91,35 @@ public class Window {
     static void saveAndRefresh(DefaultListModel<String> model) {
         try {
             Main.saveTasks(currentEvents, new ArrayList<>()); // write current tasks out
-            refresh(model); // reload + redraw
+            redraw(model);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
 
-    // Fills the list model with the current events
-    static void refresh(DefaultListModel<String> model) {
+    // Re-downloads everything from the internet, then redraws. Slow — only on
+    // demand.
+    static void reload(DefaultListModel<String> model) {
         try {
-            currentEvents = Main.buildEventList();
-            model.clear();
-            for (Event e : currentEvents) {
-                if (!showPast && Main.isPast(e.date, e.time)) {
-                    continue;
-                }
-                String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
-                String mark = e.done ? " [done]" : "";
-                model.addElement(when + "   " + e.name + mark);
-            }
+            currentEvents = Main.buildEventList(); // the slow network part
+            redraw(model);
         } catch (Exception ex) {
             ex.printStackTrace();
+        }
+    }
+
+    // Just redraws the list from data we already have. Fast — no network.
+    static void redraw(DefaultListModel<String> model) {
+        model.clear();
+        visibleEvents.clear();
+        for (Event e : currentEvents) {
+            if (!showPast && Main.isPast(e.date, e.time)) {
+                continue;
+            }
+            visibleEvents.add(e);
+            String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
+            String mark = e.done ? " [done]" : "";
+            model.addElement(when + "   " + e.name + mark);
         }
     }
 
@@ -111,12 +128,13 @@ public class Window {
         if (row < 0) {
             return;
         }
-        if (!currentEvents.get(row).userAdded) {
+        Event selected = visibleEvents.get(row);
+        if (!selected.userAdded) {
             JOptionPane.showMessageDialog(null,
                     "That's a calendar event — it can only be changed in Brightspace or Google.");
             return;
         }
-        currentEvents.remove(row);
+        currentEvents.remove(selected);
         saveAndRefresh(model);
     }
 
@@ -125,19 +143,38 @@ public class Window {
         if (row < 0) {
             return;
         }
-        if (!currentEvents.get(row).userAdded) {
+        Event selected = visibleEvents.get(row);
+        if (!selected.userAdded) {
             JOptionPane.showMessageDialog(null,
                     "That's a calendar event — it can only be changed in Brightspace or Google.");
             return;
         }
-        currentEvents.get(row).done = true;
+        selected.done = !selected.done;
         saveAndRefresh(model);
     }
 
     static void togglePast(DefaultListModel<String> model, JButton togglePastButton) {
         showPast = !showPast;
         togglePastButton.setText(showPast ? "Hide Past" : "Show Past");
-        refresh(model);
+        redraw(model);
+    }
+
+    static void openSelected(JList<String> list) {
+        int row = list.getSelectedIndex();
+        if (row < 0) {
+            return;
+        }
+        Event selected = visibleEvents.get(row);
+        if (selected.url.isBlank()) {
+            JOptionPane.showMessageDialog(null, "This item has no link to open.");
+            return;
+        }
+
+        try {
+            java.awt.Desktop.getDesktop().browse(new java.net.URI(selected.url));
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
 }
