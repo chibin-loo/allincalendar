@@ -38,7 +38,9 @@ public class Window {
         JButton doneButton = new JButton("Mark Done");
         JButton refreshButton = new JButton("Full Refresh");
         JButton togglePastButton = new JButton("Show Past");
+        JButton settingsButton = new JButton("Settings");
         JPanel buttonPanel = new JPanel(new java.awt.GridLayout(0, 3, 5, 5));
+        buttonPanel.add(settingsButton);
         buttonPanel.add(addButton);
         buttonPanel.add(removeButton);
         buttonPanel.add(doneButton);
@@ -53,11 +55,12 @@ public class Window {
         togglePastButton.addActionListener(clickEvent -> togglePast(model, togglePastButton));
         list.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent clickEvent) {
-                if (clickEvent.getClickCount() == 2) { // only react to double-clicks
+                if (clickEvent.getClickCount() == 2) {
                     openSelected(list);
                 }
             }
         });
+        settingsButton.addActionListener(clickEvent -> SettingsWindow.open(frame, () -> reload(model)));
 
         frame.setVisible(true);
         javax.swing.SwingUtilities.invokeLater(() -> reload(model));

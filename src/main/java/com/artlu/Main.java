@@ -18,15 +18,11 @@ public class Main {
     static List<Event> buildEventList() throws Exception {
         List<Event> events = new ArrayList<>();
 
-        // Calendar links now come from settings
-        String brightspace = Settings.get("brightspace", "");
-        String google = Settings.get("google", "");
-
-        if (!brightspace.isBlank()) {
-            addEvents(brightspace, events);
-        }
-        if (!google.isBlank()) {
-            addEvents(google, events);
+        for (int i = 1; i <= 10; i++) {
+            String link = Settings.get("calendar" + i, "");
+            if (!link.isBlank()) {
+                addEvents(link, events);
+            }
         }
 
         loadTasks(events);
@@ -83,8 +79,11 @@ public class Main {
         net.fortuna.ical4j.data.CalendarBuilder builder = new net.fortuna.ical4j.data.CalendarBuilder();
         net.fortuna.ical4j.model.Calendar calendar = builder.build(new java.io.StringReader(response.body()));
 
-        java.time.LocalDateTime startTime = java.time.LocalDate.now().minusYears(7).atStartOfDay();
-        java.time.LocalDateTime endTime = java.time.LocalDate.now().plusMonths(4).atStartOfDay();
+        int monthsBack = Integer.parseInt(Settings.get("months_back", "1"));
+        int monthsAhead = Integer.parseInt(Settings.get("months_ahead", "4"));
+
+        java.time.LocalDateTime startTime = java.time.LocalDate.now().minusMonths(monthsBack).atStartOfDay();
+        java.time.LocalDateTime endTime = java.time.LocalDate.now().plusMonths(monthsAhead).atStartOfDay();
 
         net.fortuna.ical4j.model.Period<java.time.LocalDateTime> period = new net.fortuna.ical4j.model.Period<>(
                 startTime, endTime);
@@ -282,6 +281,20 @@ public class Main {
             }
         }
         Files.write(Paths.get("done-overrides.txt"), kept);
+    }
+
+    // True if this date falls inside the window the user configured
+    static boolean inWindow(String date) {
+        try {
+            LocalDate d = LocalDate.parse(date);
+            int monthsBack = Integer.parseInt(Settings.get("months_back", "1"));
+            int monthsAhead = Integer.parseInt(Settings.get("months_ahead", "4"));
+            LocalDate start = LocalDate.now().minusMonths(monthsBack);
+            LocalDate end = LocalDate.now().plusMonths(monthsAhead);
+            return !d.isBefore(start) && !d.isAfter(end);
+        } catch (Exception ex) {
+            return true; // can't tell, so keep it
+        }
     }
 
 }
