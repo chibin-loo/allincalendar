@@ -28,7 +28,7 @@ public class Window {
             ex.printStackTrace();
         }
         JFrame frame = new JFrame("AllInCalendar");
-        frame.setSize(1100, 750);
+        frame.setSize(1180, 820);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout());
 
@@ -71,8 +71,10 @@ public class Window {
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("List", listPanel);
-        tabs.addTab("Month", MonthWindow.panel);
         tabs.addTab("Day", DayWindow.panel);
+        tabs.addTab("Week", WeekWindow.panel);
+        tabs.addTab("Month", MonthWindow.panel);
+
         frame.add(tabs, BorderLayout.CENTER);
 
         refreshButton.addActionListener(clickEvent -> reload(model));
@@ -169,6 +171,7 @@ public class Window {
         }
         MonthWindow.build(currentEvents);
         DayWindow.build(currentEvents);
+        WeekWindow.build(currentEvents);
     }
 
     static void removeSelected(JList<String> list, DefaultListModel<String> model) {

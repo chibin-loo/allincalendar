@@ -17,10 +17,11 @@ public class DayWindow {
     static void build(List<Event> events) {
         panel.removeAll();
 
-        // Header with prev/next and the date
+        // Header with prev/today/next and the date
         JPanel header = new JPanel(new BorderLayout());
         JButton prev = new JButton("◀");
         JButton next = new JButton("▶");
+        JButton today = new JButton("Today");
         JLabel title = new JLabel(currentDay.getDayOfWeek() + ", " + currentDay,
                 SwingConstants.CENTER);
         title.setFont(new Font("Segoe UI", Font.BOLD, 18));
@@ -33,8 +34,16 @@ public class DayWindow {
             currentDay = currentDay.plusDays(1);
             build(events);
         });
+        today.addActionListener(e -> {
+            currentDay = LocalDate.now();
+            build(events);
+        });
 
-        header.add(prev, BorderLayout.WEST);
+        JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        leftButtons.add(prev);
+        leftButtons.add(today);
+
+        header.add(leftButtons, BorderLayout.WEST);
         header.add(title, BorderLayout.CENTER);
         header.add(next, BorderLayout.EAST);
         header.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -43,7 +52,7 @@ public class DayWindow {
         // The timed grid — null layout means WE place things by pixel
         JPanel grid = new JPanel(null);
         grid.setBackground(Color.WHITE);
-        grid.setPreferredSize(new Dimension(500, 24 * HOUR_HEIGHT));
+        grid.setPreferredSize(new Dimension(700, 24 * HOUR_HEIGHT));
 
         // Hour lines and labels
         for (int hour = 0; hour < 24; hour++) {
@@ -57,7 +66,7 @@ public class DayWindow {
 
             JPanel line = new JPanel();
             line.setBackground(new Color(230, 230, 230));
-            line.setBounds(LABEL_WIDTH, y, 440, 1);
+            line.setBounds(LABEL_WIDTH, y, 640, 1);
             grid.add(line);
         }
 
@@ -85,7 +94,7 @@ public class DayWindow {
             block.setFont(new Font("Segoe UI", Font.PLAIN, 11));
             block.setVerticalAlignment(SwingConstants.TOP);
             block.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
-            block.setBounds(LABEL_WIDTH + 5, y, 430, Math.max(height - 3, 18));
+            block.setBounds(LABEL_WIDTH + 5, y, 630, Math.max(height - 3, 18));
 
             // Clicking a block shows its details on the right
             final Event clicked = e;
@@ -100,7 +109,7 @@ public class DayWindow {
         }
 
         JScrollPane scroll = new JScrollPane(grid);
-        scroll.setPreferredSize(new Dimension(520, 400));
+        scroll.setPreferredSize(new Dimension(720, 400));
         panel.add(scroll, BorderLayout.CENTER);
 
         // ---- Right side: all-day items on top, details below ----
@@ -132,7 +141,7 @@ public class DayWindow {
         side.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
         side.add(allDayScroll, BorderLayout.NORTH);
         side.add(detailsScroll, BorderLayout.CENTER);
-        side.setPreferredSize(new Dimension(440, 400));
+        side.setPreferredSize(new Dimension(430, 400));
         panel.add(side, BorderLayout.EAST);
 
         // Scroll to 7am once the panel is laid out

@@ -13,10 +13,11 @@ public class MonthWindow {
     static void build(List<Event> events) {
         panel.removeAll(); // clear whatever was there before
 
-        // Header: prev button, month name, next button
+        // Header: prev/today/next and the month name
         JPanel header = new JPanel(new BorderLayout());
         JButton prev = new JButton("◀");
         JButton next = new JButton("▶");
+        JButton today = new JButton("Today");
         JLabel title = new JLabel(currentMonth.getMonth() + " " + currentMonth.getYear(),
                 SwingConstants.CENTER);
         title.setFont(new Font("Segoe UI", Font.BOLD, 20));
@@ -29,8 +30,16 @@ public class MonthWindow {
             currentMonth = currentMonth.plusMonths(1);
             build(events);
         });
+        today.addActionListener(e -> {
+            currentMonth = LocalDate.now();
+            build(events);
+        });
 
-        header.add(prev, BorderLayout.WEST);
+        JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        leftButtons.add(prev);
+        leftButtons.add(today);
+
+        header.add(leftButtons, BorderLayout.WEST);
         header.add(title, BorderLayout.CENTER);
         header.add(next, BorderLayout.EAST);
         header.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -40,7 +49,7 @@ public class MonthWindow {
         JPanel grid = new JPanel(new GridLayout(0, 7, 4, 4));
         grid.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
 
-        String[] dayNames = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+        String[] dayNames = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
         for (String d : dayNames) {
             JLabel dayLabel = new JLabel(d, SwingConstants.CENTER);
             dayLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
@@ -48,7 +57,7 @@ public class MonthWindow {
         }
 
         LocalDate firstOfMonth = currentMonth.withDayOfMonth(1);
-        int leadingBlanks = firstOfMonth.getDayOfWeek().getValue() - 1;
+        int leadingBlanks = firstOfMonth.getDayOfWeek().getValue() % 7;
         for (int i = 0; i < leadingBlanks; i++) {
             grid.add(new JLabel(""));
         }
