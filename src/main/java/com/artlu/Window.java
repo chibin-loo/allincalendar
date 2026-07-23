@@ -72,6 +72,7 @@ public class Window {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("List", listPanel);
         tabs.addTab("Month", MonthWindow.panel);
+        tabs.addTab("Day", DayWindow.panel);
         frame.add(tabs, BorderLayout.CENTER);
 
         refreshButton.addActionListener(clickEvent -> reload(model));
@@ -167,6 +168,7 @@ public class Window {
             model.addElement(when + "   " + e.name + mark);
         }
         MonthWindow.build(currentEvents);
+        DayWindow.build(currentEvents);
     }
 
     static void removeSelected(JList<String> list, DefaultListModel<String> model) {
