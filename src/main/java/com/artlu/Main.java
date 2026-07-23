@@ -14,6 +14,30 @@ import java.util.List;
 
 public class Main {
 
+    // A fixed palette — muted enough to read white text on
+    static final java.awt.Color[] PALETTE = {
+            new java.awt.Color(120, 130, 200), // blue-violet
+            new java.awt.Color(200, 120, 130), // rose
+            new java.awt.Color(120, 170, 130), // green
+            new java.awt.Color(200, 160, 100), // amber
+            new java.awt.Color(140, 130, 175), // lavender
+            new java.awt.Color(100, 165, 180), // teal
+            new java.awt.Color(185, 135, 175), // orchid
+            new java.awt.Color(150, 150, 110), // olive
+    };
+
+    static java.awt.Color colorFor(Event e) {
+        String key;
+        if (e.uid.startsWith("gradescope|")) {
+            key = e.url; // same course = same colour
+        } else if (!e.uid.isBlank()) {
+            key = e.uid; // same recurring series = same colour
+        } else {
+            key = e.name;
+        }
+        return PALETTE[Math.abs(key.hashCode()) % PALETTE.length];
+    }
+
     // builds full list of events for front end
     static List<Event> buildEventList() throws Exception {
         List<Event> events = new ArrayList<>();
