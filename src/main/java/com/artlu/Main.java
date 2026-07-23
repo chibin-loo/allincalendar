@@ -107,12 +107,18 @@ public class Main {
 
             for (var occurrence : occurrences) {
                 java.time.temporal.Temporal start = occurrence.getStart();
-                String isoDate = start.toString();
+                java.time.temporal.Temporal end = occurrence.getEnd();
+
+                String isoStart = start.toString();
+                String isoEnd = end.toString();
 
                 Event e = new Event();
                 e.name = name;
-                e.date = isoDate.length() >= 10 ? isoDate.substring(0, 10) : isoDate;
-                e.time = extractTime(isoDate);
+                e.date = isoStart.length() >= 10 ? isoStart.substring(0, 10) : isoStart;
+                e.time = extractTime(isoStart);
+                e.endDate = isoEnd.length() >= 10 ? isoEnd.substring(0, 10) : isoEnd;
+                e.endTime = extractTime(isoEnd);
+                e.description = description;
                 e.url = url;
                 e.uid = uid;
                 events.add(e);
@@ -191,15 +197,15 @@ public class Main {
         Files.write(Paths.get("tasks.txt"), lines);
     }
 
-    // Format events for storage ex. "Study|2026-01-20|18:00|false"
     static String lineFor(Event e) {
-        return e.name + "|" + e.date + "|" + e.time + "|" + e.done;
+        String safeDesc = e.description.replace("|", "/").replace("\n", " ");
+        return e.name + "|" + e.date + "|" + e.time + "|" + e.done + "|"
+                + e.endDate + "|" + e.endTime + "|" + safeDesc;
     }
 
     // Reads your saved tasks back from tasks.txt
     static void loadTasks(List<Event> events) throws Exception {
 
-        // no file do nothing
         if (!Files.exists(Paths.get("tasks.txt"))) {
             return;
         }
@@ -216,12 +222,18 @@ public class Main {
                 continue;
             }
 
-            // create event from line and add to list
             Event e = new Event();
             e.name = parts[0];
             e.date = parts[1];
             e.time = parts[2];
             e.done = parts[3].equals("true");
+            if (parts.length >= 6) { // older lines won't have these
+                e.endDate = parts[4];
+                e.endTime = parts[5];
+            }
+            if (parts.length >= 7) {
+                e.description = parts[6];
+            }
             e.userAdded = true;
             events.add(e);
         }
@@ -304,8 +316,11 @@ class Event {
     String name;
     String date;
     String time = "";
+    String endDate = "";
+    String endTime = "";
     boolean done = false;
     boolean userAdded = false;
     String url = "";
     String uid = "";
+    String description = "";
 }

@@ -32,7 +32,12 @@ public class SettingsWindow {
             String label = field[1];
 
             grid.add(new JLabel(label + ":"));
-            JTextField box = new JTextField(Settings.get(key, ""));
+            JTextField box;
+            if (key.equals("gradescope_password")) {
+                box = new JPasswordField(Settings.get(key, ""));
+            } else {
+                box = new JTextField(Settings.get(key, ""));
+            }
             grid.add(box);
             boxes.put(key, box);
         }
