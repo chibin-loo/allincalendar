@@ -5,7 +5,11 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
 import javax.swing.JButton;
+import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import java.awt.BorderLayout;
 import java.util.ArrayList;
@@ -15,23 +19,24 @@ public class Window {
     static List<Event> currentEvents = new ArrayList<>();
     static List<Event> visibleEvents = new ArrayList<>();
     static boolean showPast = false;
+    static JTextArea detailsArea = new JTextArea(5, 40);
 
     public static void main(String[] args) {
         try {
-            javax.swing.UIManager.setLookAndFeel(
-                    javax.swing.UIManager.getSystemLookAndFeelClassName());
+            com.formdev.flatlaf.FlatLightLaf.setup();
         } catch (Exception ex) {
             ex.printStackTrace();
         }
-        JFrame frame = new JFrame("My To-Do App");
-        frame.setSize(400, 500);
+        JFrame frame = new JFrame("AllInCalendar");
+        frame.setSize(1100, 750);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout());
 
         DefaultListModel<String> model = new DefaultListModel<>();
         JList<String> list = new JList<>(model);
+        list.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 14));
+        list.setFixedCellHeight(28);
         JScrollPane scroll = new JScrollPane(list);
-        frame.add(scroll, BorderLayout.CENTER);
 
         JButton addButton = new JButton("Add Task");
         JButton removeButton = new JButton("Remove");
@@ -40,19 +45,41 @@ public class Window {
         JButton togglePastButton = new JButton("Show Past");
         JButton settingsButton = new JButton("Settings");
         JPanel buttonPanel = new JPanel(new java.awt.GridLayout(0, 3, 5, 5));
-        buttonPanel.add(settingsButton);
         buttonPanel.add(addButton);
         buttonPanel.add(removeButton);
         buttonPanel.add(doneButton);
         buttonPanel.add(refreshButton);
         buttonPanel.add(togglePastButton);
-        frame.add(buttonPanel, BorderLayout.SOUTH);
+        buttonPanel.add(settingsButton);
+
+        // Details panel below the list
+        detailsArea.setEditable(false);
+        detailsArea.setLineWrap(true);
+        detailsArea.setWrapStyleWord(true);
+        detailsArea.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 13));
+        detailsArea.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        JScrollPane detailsScroll = new JScrollPane(detailsArea);
+        detailsScroll.setBorder(BorderFactory.createTitledBorder("Details"));
+
+        // List on top, details below — a split you can drag
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, detailsScroll);
+        split.setResizeWeight(0.7); // list gets 70% of the space
+
+        JPanel listPanel = new JPanel(new BorderLayout());
+        listPanel.add(split, BorderLayout.CENTER);
+        listPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("List", listPanel);
+        tabs.addTab("Month", MonthWindow.panel);
+        frame.add(tabs, BorderLayout.CENTER);
 
         refreshButton.addActionListener(clickEvent -> reload(model));
         addButton.addActionListener(clickEvent -> addTask(frame, model));
         removeButton.addActionListener(clickEvent -> removeSelected(list, model));
         doneButton.addActionListener(clickEvent -> markDone(list, model));
         togglePastButton.addActionListener(clickEvent -> togglePast(model, togglePastButton));
+        settingsButton.addActionListener(clickEvent -> SettingsWindow.open(frame, () -> reload(model)));
         list.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent clickEvent) {
                 if (clickEvent.getClickCount() == 2) {
@@ -60,7 +87,7 @@ public class Window {
                 }
             }
         });
-        settingsButton.addActionListener(clickEvent -> SettingsWindow.open(frame, () -> reload(model)));
+        list.addListSelectionListener(selectionEvent -> showDetails(list));
 
         frame.setVisible(true);
         javax.swing.SwingUtilities.invokeLater(() -> reload(model));
@@ -139,6 +166,7 @@ public class Window {
             String mark = e.done ? " [done]" : "";
             model.addElement(when + "   " + e.name + mark);
         }
+        MonthWindow.build(currentEvents);
     }
 
     static void removeSelected(JList<String> list, DefaultListModel<String> model) {
@@ -184,6 +212,37 @@ public class Window {
         showPast = !showPast;
         togglePastButton.setText(showPast ? "Hide Past" : "Show Past");
         redraw(model);
+    }
+
+    static void showDetails(JList<String> list) {
+        int row = list.getSelectedIndex();
+        if (row < 0 || row >= visibleEvents.size()) {
+            detailsArea.setText("");
+            return;
+        }
+
+        Event e = visibleEvents.get(row);
+        StringBuilder text = new StringBuilder();
+        text.append(e.name).append("\n\n");
+
+        String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
+        if (!e.endTime.isBlank()) {
+            when += " - " + e.endTime;
+        }
+        text.append(when).append("\n");
+
+        if (e.done) {
+            text.append("[done]\n");
+        }
+        if (!e.url.isBlank()) {
+            text.append("\nDouble-click to open: ").append(e.url).append("\n");
+        }
+        if (!e.description.isBlank()) {
+            text.append("\n").append(e.description);
+        }
+
+        detailsArea.setText(text.toString());
+        detailsArea.setCaretPosition(0); // scroll back to the top
     }
 
     static void openSelected(JList<String> list) {
