@@ -14,11 +14,6 @@ public class WeekWindow {
     static final int LABEL_WIDTH = 60;
     static final int COL_WIDTH = 150;
 
-    // Walks back to Monday of whatever week this date is in
-    static LocalDate mondayOf(LocalDate d) {
-        return d.minusDays(d.getDayOfWeek().getValue() - 1);
-    }
-
     static void build(List<Event> events) {
         panel.removeAll();
 
@@ -56,7 +51,7 @@ public class WeekWindow {
 
         // Day-name row across the top, aligned with the columns
         JPanel dayHeader = new JPanel(null);
-        dayHeader.setPreferredSize(new Dimension(LABEL_WIDTH + 7 * COL_WIDTH, 28));
+        dayHeader.setPreferredSize(new Dimension(LABEL_WIDTH + 7 * COL_WIDTH, 90));
         for (int i = 0; i < 7; i++) {
             LocalDate d = weekStart.plusDays(i);
             JLabel lbl = new JLabel(d.getDayOfWeek().toString().substring(0, 3) + " " + d.getDayOfMonth(),
@@ -64,6 +59,29 @@ public class WeekWindow {
             lbl.setFont(new Font("Segoe UI", Font.BOLD, 12));
             lbl.setBounds(LABEL_WIDTH + i * COL_WIDTH, 4, COL_WIDTH, 20);
             dayHeader.add(lbl);
+            // Deadlines and all-day items for this day
+            String isoDay = d.toString();
+            int y = 26;
+            for (Event e : events) {
+                if (!e.date.equals(isoDay)) {
+                    continue;
+                }
+                if (!e.endTime.isBlank()) {
+                    continue; // timed events go in the grid
+                }
+                if (y > 62) {
+                    break;
+                }
+                String dueText = e.isDone() ? e.name + " [DONE]" : e.name;
+                JLabel due = new JLabel(dueText);
+                due.setOpaque(true);
+                due.setBackground(e.isDone() ? new Color(190, 190, 190) : Main.colorFor(e));
+                due.setForeground(Color.WHITE);
+                due.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                due.setBounds(LABEL_WIDTH + i * COL_WIDTH + 2, y, COL_WIDTH - 5, 20);
+                dayHeader.add(due);
+                y += 22;
+            }
         }
 
         // The grid
@@ -103,17 +121,22 @@ public class WeekWindow {
                 if (!e.date.equals(iso) || e.time.isBlank())
                     continue;
 
-                int startMin = minutesOf(e.time);
-                int endMin = e.endTime.isBlank() ? startMin + 30 : minutesOf(e.endTime);
-                if (endMin <= startMin)
-                    endMin = startMin + 30;
+                int startMin = Main.minutesOf(e.time);
+                if (startMin < 0) {
+                    continue; // can't place it, skip
+                }
+                int endMin = e.endTime.isBlank() ? startMin + 30 : Main.minutesOf(e.endTime);
+                if (endMin <= startMin) {
+                    endMin = startMin + 30; // covers -1 too, since -1 < startMin
+                }
 
                 int y = startMin * HOUR_HEIGHT / 60;
                 int height = (endMin - startMin) * HOUR_HEIGHT / 60;
 
-                JLabel block = new JLabel("<html><b>" + e.name + "</b><br>" + e.time + "</html>");
+                String nameText = e.isDone() ? e.name + "  [DONE]" : e.name;
+                JLabel block = new JLabel("<html><b>" + nameText + "</b><br>" + e.time + "</html>");
                 block.setOpaque(true);
-                block.setBackground(Main.colorFor(e));
+                block.setBackground(e.isDone() ? new Color(190, 190, 190) : Main.colorFor(e));
                 block.setForeground(Color.WHITE);
                 block.setFont(new Font("Segoe UI", Font.PLAIN, 11));
                 block.setVerticalAlignment(SwingConstants.TOP);
@@ -133,15 +156,6 @@ public class WeekWindow {
 
         panel.revalidate();
         panel.repaint();
-    }
-
-    static int minutesOf(String time) {
-        try {
-            LocalTime t = LocalTime.parse(time);
-            return t.getHour() * 60 + t.getMinute();
-        } catch (Exception ex) {
-            return 0;
-        }
     }
 
     // Walks back to Sunday of whatever week this date is in

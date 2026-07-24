@@ -1,6 +1,5 @@
 package com.artlu;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.jsoup.Connection;
@@ -92,6 +91,7 @@ public class Gradescope {
             e.time = due.substring(11, 16); // "23:00"
             e.uid = "gradescope|" + name + "|" + e.date;
             e.userAdded = false;
+            e.kind = "task";
             events.add(e);
         }
     }
@@ -108,18 +108,4 @@ public class Gradescope {
         }
     }
 
-    public static void main(String[] args) throws Exception {
-        Map<String, String> cookies = login();
-        Map<String, String> courses = getCourses(cookies);
-
-        List<Event> events = new ArrayList<>();
-        for (String url : courses.values()) {
-            addAssignments(url, cookies, events);
-        }
-
-        System.out.println("Collected " + events.size() + " assignments:");
-        for (Event e : events) {
-            System.out.println("  " + e.date + " " + e.time + "  " + e.name);
-        }
-    }
 }

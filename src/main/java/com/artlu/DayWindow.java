@@ -76,20 +76,22 @@ public class DayWindow {
             if (!e.date.equals(iso) || e.time.isBlank()) {
                 continue; // not today, or has no time (handled later)
             }
-
-            int startMin = minutesOf(e.time);
-            int endMin = e.endTime.isBlank() ? startMin + 30 : minutesOf(e.endTime);
-            if (endMin <= startMin) {
-                endMin = startMin + 30; // guard against bad data
+            int startMin = Main.minutesOf(e.time);
+            if (startMin < 0) {
+                continue; // can't place it, skip
             }
-
+            int endMin = e.endTime.isBlank() ? startMin + 30 : Main.minutesOf(e.endTime);
+            if (endMin <= startMin) {
+                endMin = startMin + 30; // covers -1 too, since -1 < startMin
+            }
             int y = startMin * HOUR_HEIGHT / 60;
             int height = (endMin - startMin) * HOUR_HEIGHT / 60;
 
             String timeText = e.time + " - " + (e.endTime.isBlank() ? "" : e.endTime);
-            JLabel block = new JLabel("<html><b>" + e.name + "</b><br>" + timeText + "</html>");
+            String nameText = e.isDone() ? e.name + "  [DONE]" : e.name;
+            JLabel block = new JLabel("<html><b>" + nameText + "</b><br>" + timeText + "</html>");
             block.setOpaque(true);
-            block.setBackground(Main.colorFor(e));
+            block.setBackground(e.isDone() ? new Color(190, 190, 190) : Main.colorFor(e));
             block.setForeground(Color.WHITE);
             block.setFont(new Font("Segoe UI", Font.PLAIN, 11));
             block.setVerticalAlignment(SwingConstants.TOP);
@@ -112,19 +114,34 @@ public class DayWindow {
         scroll.setPreferredSize(new Dimension(720, 400));
         panel.add(scroll, BorderLayout.CENTER);
 
-        // ---- Right side: all-day items on top, details below ----
         DefaultListModel<String> allDayModel = new DefaultListModel<>();
         for (Event e : events) {
             if (e.date.equals(iso) && e.time.isBlank()) {
-                allDayModel.addElement(e.name);
+                allDayModel.addElement(e.isDone() ? e.name + "  [DONE]" : e.name);
             }
         }
+
         if (allDayModel.isEmpty()) {
             allDayModel.addElement("(nothing)");
         }
         JList<String> allDayList = new JList<>(allDayModel);
-        allDayList.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        allDayList.setFixedCellHeight(24);
+        allDayList.setFont(new Font("Segoe UI", Font.PLAIN, 15));
+        allDayList.setFixedCellHeight(28);
+
+        // Clicking an all-day item shows its details
+        final List<Event> allDayEvents = new java.util.ArrayList<>();
+        for (Event e : events) {
+            if (e.date.equals(iso) && e.time.isBlank()) {
+                allDayEvents.add(e);
+            }
+        }
+        allDayList.addListSelectionListener(selectionEvent -> {
+            int row = allDayList.getSelectedIndex();
+            if (row >= 0 && row < allDayEvents.size()) {
+                showDetails(allDayEvents.get(row));
+            }
+        });
+
         JScrollPane allDayScroll = new JScrollPane(allDayList);
         allDayScroll.setBorder(BorderFactory.createTitledBorder("All day / no time"));
         allDayScroll.setPreferredSize(new Dimension(420, 180));
@@ -159,6 +176,9 @@ public class DayWindow {
             text.append(" - ").append(e.endTime);
         }
         text.append("\n");
+        if (e.isDone()) {
+            text.append("[done]\n");
+        }
         if (!e.url.isBlank()) {
             text.append("\n").append(e.url).append("\n");
         }
@@ -169,13 +189,4 @@ public class DayWindow {
         detailsArea.setCaretPosition(0);
     }
 
-    // Turns "10:30" into minutes since midnight (630)
-    static int minutesOf(String time) {
-        try {
-            LocalTime t = LocalTime.parse(time);
-            return t.getHour() * 60 + t.getMinute();
-        } catch (Exception ex) {
-            return 0;
-        }
-    }
 }

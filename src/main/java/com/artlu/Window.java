@@ -111,6 +111,7 @@ public class Window {
             e.date = (date == null || date.isBlank()) ? "no date" : date.trim();
             e.time = (time == null) ? "" : time.trim();
             e.userAdded = true;
+            e.kind = "task";
 
             Main.saveNewTask(e);
             currentEvents.add(e);
@@ -166,7 +167,7 @@ public class Window {
             }
             visibleEvents.add(e);
             String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
-            String mark = e.done ? " [done]" : "";
+            String mark = e.isDone() ? " [done]" : "";
             model.addElement(when + "   " + e.name + mark);
         }
         MonthWindow.build(currentEvents);
@@ -180,11 +181,17 @@ public class Window {
             return;
         }
         Event selected = visibleEvents.get(row);
+
+        if (selected.sourceTask != null) {
+            selected = selected.sourceTask;
+        }
+
         if (!selected.userAdded) {
             JOptionPane.showMessageDialog(null,
                     "That's a calendar event — it can only be changed in Brightspace or Google.");
             return;
         }
+
         currentEvents.remove(selected);
         saveAndRefresh(model);
     }
@@ -196,7 +203,10 @@ public class Window {
         }
 
         Event selected = visibleEvents.get(row);
-        selected.done = !selected.done; // flip it, don't force true
+        if (selected.sourceTask != null) {
+            selected = selected.sourceTask;
+        }
+        selected.done = !selected.done;
 
         try {
             if (selected.userAdded) {
@@ -235,8 +245,7 @@ public class Window {
             when += " - " + e.endTime;
         }
         text.append(when).append("\n");
-
-        if (e.done) {
+        if (e.isDone()) {
             text.append("[done]\n");
         }
         if (!e.url.isBlank()) {
