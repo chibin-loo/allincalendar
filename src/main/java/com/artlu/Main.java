@@ -346,6 +346,10 @@ public class Main {
 
     // Finds the gaps between commitments on one day
     static List<FreeBlock> findFreeBlocks(List<Event> events, LocalDate day) {
+        String daysOff = Settings.get("no_work_days", "");
+        if (!daysOff.isBlank() && daysOff.contains(day.getDayOfWeek().toString())) {
+            return new ArrayList<>();
+        }
         int dayStart = minutesOf(Settings.get("day_start", "08:00"));
         int dayEnd = minutesOf(Settings.get("day_end", "22:00"));
         int minGap = Integer.parseInt(Settings.get("min_gap_minutes", "30"));
