@@ -17,6 +17,14 @@ public class SettingsWindow {
             { "gradescope_password", "Gradescope password" },
             { "months_back", "Months of history to show" },
             { "months_ahead", "Months ahead to show" },
+            { "day_start", "Day starts at (like 08:00)" },
+            { "day_end", "Day ends at (like 22:00)" },
+            { "min_gap_minutes", "Smallest useful gap (minutes)" },
+            { "schedule_lead_days", "Start work within (days) of the due date" },
+            { "schedule_days_ahead", "Generate free time up to (days) out" },
+            { "max_work_minutes_per_day", "Max scheduled work per day (minutes)" },
+            { "max_block_minutes", "Longest single work block (minutes)" },
+            { "break_minutes", "Break between work blocks (minutes)" },
     };
 
     static void open(JFrame parent, Runnable onSave) {

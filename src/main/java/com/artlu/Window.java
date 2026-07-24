@@ -8,6 +8,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
+
+import com.artlu.Main.WorkBlock;
+
 import javax.swing.JButton;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -18,8 +21,14 @@ import java.util.List;
 public class Window {
     static List<Event> currentEvents = new ArrayList<>();
     static List<Event> visibleEvents = new ArrayList<>();
+    static JList<String> mainList;
+    static DefaultListModel<String> listModel;
     static boolean showPast = false;
     static JTextArea detailsArea = new JTextArea(5, 40);
+
+    static void redrawAll() {
+        redraw(listModel);
+    }
 
     public static void main(String[] args) {
         try {
@@ -33,7 +42,9 @@ public class Window {
         frame.setLayout(new BorderLayout());
 
         DefaultListModel<String> model = new DefaultListModel<>();
+        listModel = model;
         JList<String> list = new JList<>(model);
+        mainList = list;
         list.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 14));
         list.setFixedCellHeight(28);
         JScrollPane scroll = new JScrollPane(list);
@@ -97,24 +108,20 @@ public class Window {
     }
 
     static void addTask(JFrame frame, DefaultListModel<String> model) {
+        Event e = TaskDialog.open(frame, java.time.LocalDate.now());
+        if (e == null) {
+            return;
+        }
         try {
-            String name = JOptionPane.showInputDialog(frame, "Task name:");
-            if (name == null || name.isBlank()) {
-                return;
-            }
-
-            String date = JOptionPane.showInputDialog(frame, "Date (like 2026-01-20), or leave blank:");
-            String time = JOptionPane.showInputDialog(frame, "Time (like 18:00), or leave blank:");
-
-            Event e = new Event();
-            e.name = name.trim();
-            e.date = (date == null || date.isBlank()) ? "no date" : date.trim();
-            e.time = (time == null) ? "" : time.trim();
-            e.userAdded = true;
-
             Main.saveNewTask(e);
             currentEvents.add(e);
             redraw(model);
+
+            int row = visibleEvents.indexOf(e);
+            if (row >= 0) {
+                mainList.setSelectedIndex(row);
+                mainList.ensureIndexIsVisible(row);
+            }
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -158,6 +165,7 @@ public class Window {
 
     // Just redraws the list from data we already have. Fast — no network.
     static void redraw(DefaultListModel<String> model) {
+        Main.applyWorkBlocks(currentEvents);
         model.clear();
         visibleEvents.clear();
         for (Event e : currentEvents) {
@@ -166,7 +174,7 @@ public class Window {
             }
             visibleEvents.add(e);
             String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
-            String mark = e.done ? " [done]" : "";
+            String mark = e.isDone() ? " [done]" : "";
             model.addElement(when + "   " + e.name + mark);
         }
         MonthWindow.build(currentEvents);
@@ -180,11 +188,17 @@ public class Window {
             return;
         }
         Event selected = visibleEvents.get(row);
+
+        if (selected.sourceTask != null) {
+            selected = selected.sourceTask;
+        }
+
         if (!selected.userAdded) {
             JOptionPane.showMessageDialog(null,
                     "That's a calendar event — it can only be changed in Brightspace or Google.");
             return;
         }
+
         currentEvents.remove(selected);
         saveAndRefresh(model);
     }
@@ -196,7 +210,10 @@ public class Window {
         }
 
         Event selected = visibleEvents.get(row);
-        selected.done = !selected.done; // flip it, don't force true
+        if (selected.sourceTask != null) {
+            selected = selected.sourceTask;
+        }
+        selected.done = !selected.done;
 
         try {
             if (selected.userAdded) {
@@ -235,8 +252,7 @@ public class Window {
             when += " - " + e.endTime;
         }
         text.append(when).append("\n");
-
-        if (e.done) {
+        if (e.isDone()) {
             text.append("[done]\n");
         }
         if (!e.url.isBlank()) {

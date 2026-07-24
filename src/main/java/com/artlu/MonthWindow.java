@@ -39,6 +39,16 @@ public class MonthWindow {
         leftButtons.add(prev);
         leftButtons.add(today);
 
+        JButton jump = new JButton("Jump to…");
+        jump.addActionListener(e -> {
+            JPanel cal = MiniCalendar.create(currentMonth, picked -> {
+                currentMonth = picked;
+                build(events);
+            });
+            JOptionPane.showMessageDialog(panel, cal, "Jump to month", JOptionPane.PLAIN_MESSAGE);
+        });
+        leftButtons.add(jump);
+
         header.add(leftButtons, BorderLayout.WEST);
         header.add(title, BorderLayout.CENTER);
         header.add(next, BorderLayout.EAST);
@@ -62,9 +72,12 @@ public class MonthWindow {
             grid.add(new JLabel(""));
         }
 
+        java.util.Map<String, List<Event>> grouped = Main.byDate(events);
+
         int daysInMonth = currentMonth.lengthOfMonth();
         for (int day = 1; day <= daysInMonth; day++) {
-            grid.add(makeDayCell(currentMonth.withDayOfMonth(day), events));
+            LocalDate d = currentMonth.withDayOfMonth(day);
+            grid.add(makeDayCell(d, grouped.getOrDefault(d.toString(), java.util.List.of())));
         }
 
         panel.add(new JScrollPane(grid), BorderLayout.CENTER);
@@ -82,13 +95,12 @@ public class MonthWindow {
         number.setFont(new Font("Segoe UI", Font.BOLD, 12));
         cell.add(number);
 
-        String iso = date.toString();
         for (Event e : events) {
-            if (e.date.equals(iso)) {
-                JLabel chip = new JLabel(e.name);
-                chip.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-                cell.add(chip);
-            }
+            String label = e.isDone() ? e.name + "  [DONE]" : e.name;
+            JLabel chip = new JLabel(label);
+            chip.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            chip.setForeground(e.isDone() ? new Color(130, 130, 130) : Color.BLACK);
+            cell.add(chip);
         }
         return cell;
     }

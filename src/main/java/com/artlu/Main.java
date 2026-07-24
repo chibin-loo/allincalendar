@@ -63,7 +63,26 @@ public class Main {
                 e.done = true;
             }
         }
+
+        // Add scheduled work blocks as events
+        if (Settings.get("auto_schedule", "true").equals("true")) {
+            for (WorkBlock w : scheduleWork(events)) {
+                Event e = new Event();
+                e.name = "Work: " + w.task.name;
+                e.date = w.date.toString();
+                e.time = w.startText();
+                e.endTime = w.endText();
+                e.endDate = w.date.toString();
+                e.kind = "work";
+                e.uid = "work|" + w.task.name;
+                e.userAdded = false;
+                e.sourceTask = w.task;
+                events.add(e);
+            }
+        }
+
         events.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
+        applyWorkBlocks(events);
         return events;
     }
 
@@ -145,28 +164,9 @@ public class Main {
                 e.description = description;
                 e.url = url;
                 e.uid = uid;
+                e.kind = "event";
                 events.add(e);
             }
-        }
-    }
-
-    // check if event is happening today
-    static boolean isToday(String date) {
-        try {
-            return LocalDate.parse(date).isEqual(LocalDate.now());
-        } catch (Exception ex) {
-            return false;
-        }
-    }
-
-    // check date within 7 days of today
-    static boolean isThisWeek(String date) {
-        try {
-            LocalDate d = LocalDate.parse(date);
-            LocalDate today = LocalDate.now();
-            return !d.isBefore(today) && !d.isAfter(today.plusDays(7));
-        } catch (Exception ex) {
-            return false;
         }
     }
 
@@ -180,31 +180,6 @@ public class Main {
 
             LocalDateTime when = LocalDateTime.of(day, clock);
             return when.isBefore(LocalDateTime.now());
-        } catch (Exception ex) {
-            return false;
-        }
-    }
-
-    // check if date is in the current calendar week (Monday-Sunday)
-    static boolean isCalendarWeek(String date) {
-        try {
-            LocalDate d = LocalDate.parse(date);
-            LocalDate today = LocalDate.now();
-            // start from this monday
-            LocalDate monday = today.minusDays(today.getDayOfWeek().getValue() - 1);
-            LocalDate sunday = monday.plusDays(6);
-            return !d.isBefore(monday) && !d.isAfter(sunday);
-        } catch (Exception ex) {
-            return false;
-        }
-    }
-
-    // check if date is in the current month
-    static boolean isThisMonth(String date) {
-        try {
-            LocalDate d = LocalDate.parse(date);
-            LocalDate today = LocalDate.now();
-            return d.getYear() == today.getYear() && d.getMonth() == today.getMonth();
         } catch (Exception ex) {
             return false;
         }
@@ -224,7 +199,7 @@ public class Main {
     static String lineFor(Event e) {
         String safeDesc = e.description.replace("|", "/").replace("\n", " ");
         return e.name + "|" + e.date + "|" + e.time + "|" + e.done + "|"
-                + e.endDate + "|" + e.endTime + "|" + safeDesc;
+                + e.endDate + "|" + e.endTime + "|" + safeDesc + "|" + e.durationMin;
     }
 
     // Reads your saved tasks back from tasks.txt
@@ -258,7 +233,14 @@ public class Main {
             if (parts.length >= 7) {
                 e.description = parts[6];
             }
+            if (parts.length >= 8) {
+                try {
+                    e.durationMin = Integer.parseInt(parts[7]);
+                } catch (Exception ignored) {
+                }
+            }
             e.userAdded = true;
+            e.kind = "task";
             events.add(e);
         }
     }
@@ -333,6 +315,228 @@ public class Main {
         }
     }
 
+    // A stretch of free time on one day
+    static class FreeBlock {
+        LocalDate date;
+        int startMin; // minutes since midnight
+        int endMin;
+
+        int lengthMin() {
+            return endMin - startMin;
+        }
+
+        String startText() {
+            return String.format("%02d:%02d", startMin / 60, startMin % 60);
+        }
+
+        String endText() {
+            return String.format("%02d:%02d", endMin / 60, endMin % 60);
+        }
+    }
+
+    // Turns "10:30" into 630
+    static int minutesOf(String time) {
+        try {
+            LocalTime t = LocalTime.parse(time);
+            return t.getHour() * 60 + t.getMinute();
+        } catch (Exception ex) {
+            return -1;
+        }
+    }
+
+    // Finds the gaps between commitments on one day
+    static List<FreeBlock> findFreeBlocks(List<Event> events, LocalDate day) {
+        int dayStart = minutesOf(Settings.get("day_start", "08:00"));
+        int dayEnd = minutesOf(Settings.get("day_end", "22:00"));
+        int minGap = Integer.parseInt(Settings.get("min_gap_minutes", "30"));
+
+        // Collect the busy stretches for this day
+        List<int[]> busy = new ArrayList<>();
+        String iso = day.toString();
+        for (Event e : events) {
+            if (!e.date.equals(iso))
+                continue;
+            if (e.time.isBlank() || e.endTime.isBlank())
+                continue; // deadlines don't block time
+
+            int s = minutesOf(e.time);
+            int en = minutesOf(e.endTime);
+            if (s < 0 || en <= s)
+                continue;
+            busy.add(new int[] { s, en });
+        }
+
+        // Sort by start time
+        busy.sort((a, b) -> Integer.compare(a[0], b[0]));
+
+        // Merge overlapping or touching stretches
+        List<int[]> merged = new ArrayList<>();
+        for (int[] slot : busy) {
+            if (!merged.isEmpty() && slot[0] <= merged.get(merged.size() - 1)[1]) {
+                int[] last = merged.get(merged.size() - 1);
+                last[1] = Math.max(last[1], slot[1]); // extend the existing stretch
+            } else {
+                merged.add(new int[] { slot[0], slot[1] });
+            }
+        }
+
+        // Walk through the day, collecting the gaps
+        List<FreeBlock> free = new ArrayList<>();
+        int cursor = dayStart;
+        for (int[] slot : merged) {
+            if (slot[0] > cursor) {
+                addIfLongEnough(free, day, cursor, Math.min(slot[0], dayEnd), minGap);
+            }
+            cursor = Math.max(cursor, slot[1]);
+            if (cursor >= dayEnd)
+                break;
+        }
+        if (cursor < dayEnd) {
+            addIfLongEnough(free, day, cursor, dayEnd, minGap);
+        }
+
+        return free;
+    }
+
+    static void addIfLongEnough(List<FreeBlock> free, LocalDate day, int start, int end, int minGap) {
+        if (end - start >= minGap) {
+            FreeBlock b = new FreeBlock();
+            b.date = day;
+            b.startMin = start;
+            b.endMin = end;
+            free.add(b);
+        }
+    }
+
+    // A scheduled chunk of work for a task
+    static class WorkBlock {
+        LocalDate date;
+        int startMin;
+        int endMin;
+        Event task; // what this work is for
+
+        String startText() {
+            return String.format("%02d:%02d", startMin / 60, startMin % 60);
+        }
+
+        String endText() {
+            return String.format("%02d:%02d", endMin / 60, endMin % 60);
+        }
+    }
+
+    // Places work blocks for upcoming tasks into free time
+    static List<WorkBlock> scheduleWork(List<Event> events) {
+        int defaultDuration = Settings.getInt("default_task_minutes", 90);
+        int daysAhead = Settings.getInt("schedule_days_ahead", 60);
+        int leadDays = Settings.getInt("schedule_lead_days", 7);
+        int maxPerDay = Settings.getInt("max_work_minutes_per_day", 240);
+        int maxChunk = Settings.getInt("max_block_minutes", 120);
+        int breakMin = Settings.getInt("break_minutes", 15);
+
+        // Which items need work scheduled: not done, has a date, in the future
+        List<Event> todo = new ArrayList<>();
+        for (Event e : events) {
+            if (e.date.isBlank() || e.date.equals("no date")) {
+                continue;
+            }
+            if (!e.kind.equals("task")) {
+                continue;
+            }
+            if (isPast(e.date, e.time)) {
+                continue;
+            }
+            todo.add(e);
+        }
+
+        // Earliest deadline first
+        todo.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
+
+        // Gather free blocks for the next N days, in order
+        List<FreeBlock> free = new ArrayList<>();
+        for (int i = 0; i < daysAhead; i++) {
+            free.addAll(findFreeBlocks(events, LocalDate.now().plusDays(i)));
+        }
+
+        java.util.Map<LocalDate, Integer> usedPerDay = new java.util.HashMap<>();
+
+        List<WorkBlock> scheduled = new ArrayList<>();
+
+        for (Event task : todo) {
+            int remaining = task.durationMin > 0 ? task.durationMin : defaultDuration;
+            LocalDate deadline = LocalDate.parse(task.date);
+            LocalDate earliest = deadline.minusDays(leadDays);
+
+            for (FreeBlock block : free) {
+                if (remaining <= 0) {
+                    break;
+                }
+                if (block.date.isBefore(earliest)) {
+                    continue;
+                }
+                if (block.date.isAfter(deadline)) {
+                    break; // too late to help
+                }
+                if (block.lengthMin() <= 0) {
+                    continue; // already used up
+                }
+
+                int usedToday = usedPerDay.getOrDefault(block.date, 0);
+                int dayCapacity = maxPerDay - usedToday;
+                if (dayCapacity <= 0)
+                    continue;
+                int use = Math.min(remaining, block.lengthMin());
+                use = Math.min(use, dayCapacity); // respect the daily cap
+                use = Math.min(use, maxChunk); // no marathon blocks
+                if (use <= 0)
+                    continue;
+
+                WorkBlock w = new WorkBlock();
+                w.date = block.date;
+                w.startMin = block.startMin;
+                w.endMin = block.startMin + use;
+                w.task = task;
+                scheduled.add(w);
+
+                block.startMin += use + breakMin; // consume it plus a breather
+                remaining -= use;
+                usedPerDay.put(block.date, usedToday + use);
+            }
+        }
+
+        return scheduled;
+    }
+
+    // Groups events by their date string, so views can look up one day directly
+    static java.util.Map<String, List<Event>> byDate(List<Event> events) {
+        java.util.Map<String, List<Event>> map = new java.util.HashMap<>();
+        for (Event e : events) {
+            map.computeIfAbsent(e.date, k -> new ArrayList<>()).add(e);
+        }
+        return map;
+    }
+
+    // Removes any existing work blocks and regenerates them from current tasks
+    static void applyWorkBlocks(List<Event> events) {
+        events.removeIf(e -> e.sourceTask != null);
+        if (!Settings.get("auto_schedule", "true").equals("true")) {
+            return;
+        }
+        for (WorkBlock w : scheduleWork(events)) {
+            Event e = new Event();
+            e.name = "Work: " + w.task.name;
+            e.date = w.date.toString();
+            e.time = w.startText();
+            e.endTime = w.endText();
+            e.endDate = w.date.toString();
+            e.kind = "work";
+            e.uid = "work|" + w.task.name;
+            e.userAdded = false;
+            e.sourceTask = w.task;
+            events.add(e);
+        }
+        events.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
+    }
+
 }
 
 // Represents a single event or task
@@ -347,4 +551,11 @@ class Event {
     String url = "";
     String uid = "";
     String description = "";
+    String kind = "event";
+    Event sourceTask = null;
+    int durationMin = 0;
+
+    boolean isDone() {
+        return sourceTask != null ? sourceTask.done : done;
+    }
 }
