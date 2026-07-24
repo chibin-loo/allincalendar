@@ -82,6 +82,7 @@ public class Main {
         }
 
         events.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
+        applyWorkBlocks(events);
         return events;
     }
 
@@ -198,7 +199,7 @@ public class Main {
     static String lineFor(Event e) {
         String safeDesc = e.description.replace("|", "/").replace("\n", " ");
         return e.name + "|" + e.date + "|" + e.time + "|" + e.done + "|"
-                + e.endDate + "|" + e.endTime + "|" + safeDesc;
+                + e.endDate + "|" + e.endTime + "|" + safeDesc + "|" + e.durationMin;
     }
 
     // Reads your saved tasks back from tasks.txt
@@ -231,6 +232,12 @@ public class Main {
             }
             if (parts.length >= 7) {
                 e.description = parts[6];
+            }
+            if (parts.length >= 8) {
+                try {
+                    e.durationMin = Integer.parseInt(parts[7]);
+                } catch (Exception ignored) {
+                }
             }
             e.userAdded = true;
             e.kind = "task";
@@ -422,6 +429,9 @@ public class Main {
         int defaultDuration = Settings.getInt("default_task_minutes", 90);
         int daysAhead = Settings.getInt("schedule_days_ahead", 60);
         int leadDays = Settings.getInt("schedule_lead_days", 7);
+        int maxPerDay = Settings.getInt("max_work_minutes_per_day", 240);
+        int maxChunk = Settings.getInt("max_block_minutes", 120);
+        int breakMin = Settings.getInt("break_minutes", 15);
 
         // Which items need work scheduled: not done, has a date, in the future
         List<Event> todo = new ArrayList<>();
@@ -446,10 +456,13 @@ public class Main {
         for (int i = 0; i < daysAhead; i++) {
             free.addAll(findFreeBlocks(events, LocalDate.now().plusDays(i)));
         }
+
+        java.util.Map<LocalDate, Integer> usedPerDay = new java.util.HashMap<>();
+
         List<WorkBlock> scheduled = new ArrayList<>();
 
         for (Event task : todo) {
-            int remaining = defaultDuration;
+            int remaining = task.durationMin > 0 ? task.durationMin : defaultDuration;
             LocalDate deadline = LocalDate.parse(task.date);
             LocalDate earliest = deadline.minusDays(leadDays);
 
@@ -466,7 +479,16 @@ public class Main {
                 if (block.lengthMin() <= 0) {
                     continue; // already used up
                 }
+
+                int usedToday = usedPerDay.getOrDefault(block.date, 0);
+                int dayCapacity = maxPerDay - usedToday;
+                if (dayCapacity <= 0)
+                    continue;
                 int use = Math.min(remaining, block.lengthMin());
+                use = Math.min(use, dayCapacity); // respect the daily cap
+                use = Math.min(use, maxChunk); // no marathon blocks
+                if (use <= 0)
+                    continue;
 
                 WorkBlock w = new WorkBlock();
                 w.date = block.date;
@@ -475,8 +497,9 @@ public class Main {
                 w.task = task;
                 scheduled.add(w);
 
-                block.startMin += use; // consume that part of the gap
+                block.startMin += use + breakMin; // consume it plus a breather
                 remaining -= use;
+                usedPerDay.put(block.date, usedToday + use);
             }
         }
 
@@ -491,6 +514,29 @@ public class Main {
         }
         return map;
     }
+
+    // Removes any existing work blocks and regenerates them from current tasks
+    static void applyWorkBlocks(List<Event> events) {
+        events.removeIf(e -> e.sourceTask != null);
+        if (!Settings.get("auto_schedule", "true").equals("true")) {
+            return;
+        }
+        for (WorkBlock w : scheduleWork(events)) {
+            Event e = new Event();
+            e.name = "Work: " + w.task.name;
+            e.date = w.date.toString();
+            e.time = w.startText();
+            e.endTime = w.endText();
+            e.endDate = w.date.toString();
+            e.kind = "work";
+            e.uid = "work|" + w.task.name;
+            e.userAdded = false;
+            e.sourceTask = w.task;
+            events.add(e);
+        }
+        events.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
+    }
+
 }
 
 // Represents a single event or task
@@ -507,6 +553,7 @@ class Event {
     String description = "";
     String kind = "event";
     Event sourceTask = null;
+    int durationMin = 0;
 
     boolean isDone() {
         return sourceTask != null ? sourceTask.done : done;

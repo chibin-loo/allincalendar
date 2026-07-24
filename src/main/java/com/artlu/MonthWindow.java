@@ -39,6 +39,16 @@ public class MonthWindow {
         leftButtons.add(prev);
         leftButtons.add(today);
 
+        JButton jump = new JButton("Jump to…");
+        jump.addActionListener(e -> {
+            JPanel cal = MiniCalendar.create(currentMonth, picked -> {
+                currentMonth = picked;
+                build(events);
+            });
+            JOptionPane.showMessageDialog(panel, cal, "Jump to month", JOptionPane.PLAIN_MESSAGE);
+        });
+        leftButtons.add(jump);
+
         header.add(leftButtons, BorderLayout.WEST);
         header.add(title, BorderLayout.CENTER);
         header.add(next, BorderLayout.EAST);

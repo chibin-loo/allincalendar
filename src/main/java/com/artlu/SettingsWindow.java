@@ -22,6 +22,9 @@ public class SettingsWindow {
             { "min_gap_minutes", "Smallest useful gap (minutes)" },
             { "schedule_lead_days", "Start work within (days) of the due date" },
             { "schedule_days_ahead", "Generate free time up to (days) out" },
+            { "max_work_minutes_per_day", "Max scheduled work per day (minutes)" },
+            { "max_block_minutes", "Longest single work block (minutes)" },
+            { "break_minutes", "Break between work blocks (minutes)" },
     };
 
     static void open(JFrame parent, Runnable onSave) {

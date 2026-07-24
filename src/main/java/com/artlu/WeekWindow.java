@@ -42,7 +42,15 @@ public class WeekWindow {
         JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         leftButtons.add(prev);
         leftButtons.add(today);
-
+        JButton jump = new JButton("Jump to…");
+        jump.addActionListener(e -> {
+            JPanel cal = MiniCalendar.create(weekStart, picked -> {
+                weekStart = sundayOf(picked);
+                build(events);
+            });
+            JOptionPane.showMessageDialog(panel, cal, "Jump to week", JOptionPane.PLAIN_MESSAGE);
+        });
+        leftButtons.add(jump);
         header.add(leftButtons, BorderLayout.WEST);
         header.add(title, BorderLayout.CENTER);
         header.add(next, BorderLayout.EAST);

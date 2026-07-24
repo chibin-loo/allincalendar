@@ -42,6 +42,20 @@ public class DayWindow {
         JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         leftButtons.add(prev);
         leftButtons.add(today);
+        JButton addHere = new JButton("+ Task");
+        addHere.addActionListener(e -> {
+            Event t = TaskDialog.open(null, currentDay);
+            if (t != null) {
+                try {
+                    Main.saveNewTask(t);
+                    Window.currentEvents.add(t);
+                    Window.redrawAll();
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
+        leftButtons.add(addHere);
 
         header.add(leftButtons, BorderLayout.WEST);
         header.add(title, BorderLayout.CENTER);
@@ -154,11 +168,23 @@ public class DayWindow {
         JScrollPane detailsScroll = new JScrollPane(detailsArea);
         detailsScroll.setBorder(BorderFactory.createTitledBorder("Details"));
 
+        JPanel miniCal = MiniCalendar.create(currentDay, picked -> {
+            currentDay = picked;
+            build(events);
+        });
+        miniCal.setBorder(BorderFactory.createTitledBorder("Jump to"));
+
         JPanel side = new JPanel(new BorderLayout(0, 8));
         side.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
-        side.add(allDayScroll, BorderLayout.NORTH);
+
+        JPanel sideTop = new JPanel(new BorderLayout(0, 8));
+        sideTop.add(miniCal, BorderLayout.NORTH);
+        sideTop.add(allDayScroll, BorderLayout.CENTER);
+
+        side.add(sideTop, BorderLayout.NORTH);
         side.add(detailsScroll, BorderLayout.CENTER);
         side.setPreferredSize(new Dimension(430, 400));
+        panel.add(side, BorderLayout.EAST);
         panel.add(side, BorderLayout.EAST);
 
         // Scroll to 7am once the panel is laid out
