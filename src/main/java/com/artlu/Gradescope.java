@@ -48,9 +48,17 @@ public class Gradescope {
 
         Map<String, String> courses = new java.util.LinkedHashMap<>();
 
-        // Course tiles are links pointing at /courses/12345
+        // Course tiles point at /courses/12345 — digits only, no extra path.
+        // The regex filters out sub-page links like /courses/123/assignments/45.
         for (org.jsoup.nodes.Element link : account.select("a[href^=/courses/]")) {
-            String url = "https://www.gradescope.com" + link.attr("href");
+            String href = link.attr("href");
+            if (!href.matches("/courses/\\d+")) {
+                continue; // not a course homepage, skip it
+            }
+            String url = "https://www.gradescope.com" + href;
+            if (courses.containsValue(url)) {
+                continue; // already have this course under a different link
+            }
             String name = link.text().trim();
             if (!name.isBlank()) {
                 courses.put(name, url);

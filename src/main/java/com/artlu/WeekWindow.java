@@ -3,172 +3,106 @@ package com.artlu;
 import javax.swing.*;
 import java.awt.*;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public class WeekWindow {
     static LocalDate weekStart = sundayOf(LocalDate.now());
     static JPanel panel = new JPanel(new BorderLayout());
+    static final int HOUR_HEIGHT = 70;
 
-    static final int HOUR_HEIGHT = 80;
-    static final int LABEL_WIDTH = 60;
-    static final int COL_WIDTH = 150;
+    private static boolean built = false;
+    private static List<Event> events = new ArrayList<>();
+    private static CalendarUI.TimeGrid grid;
+    private static CalendarUI.AllDayHeader header;
+    private static CalendarUI.Sidebar sidebar;
+    private static JSplitPane split;
+    private static JScrollPane scroll;
+    private static JLabel title;
+    private static JButton sidebarToggle;
+    private static boolean scrollPending = true;
 
-    static void build(List<Event> events) {
-        panel.removeAll();
+    static void build(List<Event> evts) {
+        events = evts;
+        if (!built) {
+            chrome();
+            built = true;
+        }
+        refresh();
+    }
 
-        JPanel header = new JPanel(new BorderLayout());
-        JButton prev = new JButton("◀");
-        JButton next = new JButton("▶");
-        JButton today = new JButton("Today");
-        JLabel title = new JLabel(weekStart + "  to  " + weekStart.plusDays(6),
-                SwingConstants.CENTER);
+    private static void chrome() {
+        grid = new CalendarUI.TimeGrid(7, HOUR_HEIGHT);
+        header = new CalendarUI.AllDayHeader(grid, 7);
+        scroll = new JScrollPane(grid);
+        scroll.setColumnHeaderView(header);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        title = new JLabel("", SwingConstants.CENTER);
         title.setFont(new Font("Segoe UI", Font.BOLD, 18));
 
-        prev.addActionListener(e -> {
-            weekStart = weekStart.minusWeeks(1);
-            build(events);
+        sidebar = new CalendarUI.Sidebar(picked -> {
+            weekStart = sundayOf(picked);
+            scrollPending = true;
+            refresh();
         });
-        next.addActionListener(e -> {
-            weekStart = weekStart.plusWeeks(1);
-            build(events);
-        });
-        today.addActionListener(e -> {
-            weekStart = sundayOf(LocalDate.now());
-            build(events);
-        });
+        split = CalendarUI.split(scroll, sidebar);
 
-        // prev and Today sit together on the left
-        JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        leftButtons.add(prev);
-        leftButtons.add(today);
-        JButton jump = new JButton("Jump to…");
-        jump.addActionListener(e -> {
-            JPanel cal = MiniCalendar.create(weekStart, picked -> {
-                weekStart = sundayOf(picked);
-                build(events);
-            });
-            JOptionPane.showMessageDialog(panel, cal, "Jump to week", JOptionPane.PLAIN_MESSAGE);
-        });
-        leftButtons.add(jump);
-        header.add(leftButtons, BorderLayout.WEST);
-        header.add(title, BorderLayout.CENTER);
-        header.add(next, BorderLayout.EAST);
-        header.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        panel.add(header, BorderLayout.NORTH);
+        sidebarToggle = new JButton("Hide sidebar");
+        sidebarToggle.addActionListener(e -> CalendarUI.toggleSidebar(split, sidebar, sidebarToggle));
 
-        // Day-name row across the top, aligned with the columns
-        JPanel dayHeader = new JPanel(null);
-        dayHeader.setPreferredSize(new Dimension(LABEL_WIDTH + 7 * COL_WIDTH, 90));
-        for (int i = 0; i < 7; i++) {
-            LocalDate d = weekStart.plusDays(i);
-            JLabel lbl = new JLabel(d.getDayOfWeek().toString().substring(0, 3) + " " + d.getDayOfMonth(),
-                    SwingConstants.CENTER);
-            lbl.setFont(new Font("Segoe UI", Font.BOLD, 12));
-            lbl.setBounds(LABEL_WIDTH + i * COL_WIDTH, 4, COL_WIDTH, 20);
-            dayHeader.add(lbl);
-            // Deadlines and all-day items for this day
-            String isoDay = d.toString();
-            int y = 26;
-            for (Event e : events) {
-                if (!e.date.equals(isoDay)) {
-                    continue;
-                }
-                if (!e.endTime.isBlank()) {
-                    continue; // timed events go in the grid
-                }
-                if (y > 62) {
-                    break;
-                }
-                String dueText = e.isDone() ? e.name + " [DONE]" : e.name;
-                JLabel due = new JLabel(dueText);
-                due.setOpaque(true);
-                due.setBackground(e.isDone() ? new Color(190, 190, 190) : Main.colorFor(e));
-                due.setForeground(Color.WHITE);
-                due.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-                due.setBounds(LABEL_WIDTH + i * COL_WIDTH + 2, y, COL_WIDTH - 5, 20);
-                dayHeader.add(due);
-                y += 22;
-            }
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        left.add(CalendarUI.nav("◀", () -> jump(weekStart.minusWeeks(1))));
+        left.add(CalendarUI.nav("Today", () -> jump(LocalDate.now())));
+        left.add(CalendarUI.nav("▶", () -> jump(weekStart.plusWeeks(1))));
+        left.add(CalendarUI.nav("+ Task", () -> Window.newTaskAt(focusDay(), "")));
+        left.add(CalendarUI.nav("+ Event", () -> Window.newEventOn(focusDay())));
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        right.add(sidebarToggle);
+
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.add(left, BorderLayout.WEST);
+        bar.add(title, BorderLayout.CENTER);
+        bar.add(right, BorderLayout.EAST);
+        bar.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+
+        panel.add(bar, BorderLayout.NORTH);
+        panel.add(split, BorderLayout.CENTER);
+    }
+
+    private static void jump(LocalDate d) {
+        weekStart = sundayOf(d);
+        scrollPending = true;
+        refresh();
+    }
+
+    private static void refresh() {
+        title.setText(weekStart + "  to  " + weekStart.plusDays(6));
+        grid.setEvents(weekStart, events);
+        header.setEvents(weekStart, events);
+        sidebar.setMini(weekStart);
+        sidebar.setDeadlines(events, weekStart, weekStart.plusDays(6), "Due this week");
+        if (scrollPending) {
+            scrollPending = false;
+            SwingUtilities.invokeLater(
+                    () -> scroll.getVerticalScrollBar().setValue(7 * HOUR_HEIGHT));
         }
-
-        // The grid
-        JPanel grid = new JPanel(null);
-        grid.setBackground(Color.WHITE);
-        grid.setPreferredSize(new Dimension(LABEL_WIDTH + 7 * COL_WIDTH, 24 * HOUR_HEIGHT));
-
-        // Hour labels and horizontal lines
-        for (int hour = 0; hour < 24; hour++) {
-            int y = hour * HOUR_HEIGHT;
-            JLabel hourLabel = new JLabel(String.format("%02d:00", hour));
-            hourLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-            hourLabel.setForeground(new Color(120, 120, 120));
-            hourLabel.setBounds(5, y, LABEL_WIDTH - 10, 15);
-            grid.add(hourLabel);
-
-            JPanel line = new JPanel();
-            line.setBackground(new Color(230, 230, 230));
-            line.setBounds(LABEL_WIDTH, y, 7 * COL_WIDTH, 1);
-            grid.add(line);
-        }
-
-        // Vertical lines between days
-        for (int i = 0; i <= 7; i++) {
-            JPanel vline = new JPanel();
-            vline.setBackground(new Color(230, 230, 230));
-            vline.setBounds(LABEL_WIDTH + i * COL_WIDTH, 0, 1, 24 * HOUR_HEIGHT);
-            grid.add(vline);
-        }
-
-        // Blocks, one column per day
-        for (int i = 0; i < 7; i++) {
-            String iso = weekStart.plusDays(i).toString();
-            int columnX = LABEL_WIDTH + i * COL_WIDTH;
-
-            for (Event e : events) {
-                if (!e.date.equals(iso) || e.time.isBlank())
-                    continue;
-
-                int startMin = Main.minutesOf(e.time);
-                if (startMin < 0) {
-                    continue; // can't place it, skip
-                }
-                int endMin = e.endTime.isBlank() ? startMin + 30 : Main.minutesOf(e.endTime);
-                if (endMin <= startMin) {
-                    endMin = startMin + 30; // covers -1 too, since -1 < startMin
-                }
-
-                int y = startMin * HOUR_HEIGHT / 60;
-                int height = (endMin - startMin) * HOUR_HEIGHT / 60;
-
-                String nameText = e.isDone() ? e.name + "  [DONE]" : e.name;
-                JLabel block = new JLabel("<html><b>" + nameText + "</b><br>" + e.time + "</html>");
-                block.setOpaque(true);
-                block.setBackground(e.isDone() ? new Color(190, 190, 190) : Main.colorFor(e));
-                block.setForeground(Color.WHITE);
-                block.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-                block.setVerticalAlignment(SwingConstants.TOP);
-                block.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-                block.setBounds(columnX + 2, y, COL_WIDTH - 5, Math.max(height - 3, 16));
-
-                grid.add(block);
-                grid.setComponentZOrder(block, 0);
-            }
-        }
-
-        JScrollPane scroll = new JScrollPane(grid);
-        scroll.setColumnHeaderView(dayHeader);
-        panel.add(scroll, BorderLayout.CENTER);
-
-        SwingUtilities.invokeLater(() -> scroll.getVerticalScrollBar().setValue(7 * HOUR_HEIGHT));
-
         panel.revalidate();
         panel.repaint();
     }
 
-    // Walks back to Sunday of whatever week this date is in
     static LocalDate sundayOf(LocalDate d) {
         return d.minusDays(d.getDayOfWeek().getValue() % 7);
     }
 
+    // Which day the + buttons should target. The week view shows seven days, so
+    // "add" is ambiguous: pick today when today is on screen, otherwise the
+    // Sunday of whatever week you've navigated to.
+    private static LocalDate focusDay() {
+        LocalDate today = LocalDate.now();
+        boolean onScreen = !today.isBefore(weekStart) && !today.isAfter(weekStart.plusDays(6));
+        return onScreen ? today : weekStart;
+    }
 }
