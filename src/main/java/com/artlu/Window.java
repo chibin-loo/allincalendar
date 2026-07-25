@@ -23,6 +23,7 @@ public class Window {
     static List<Event> visibleEvents = new ArrayList<>();
     static JList<String> mainList;
     static DefaultListModel<String> listModel;
+    static JTabbedPane tabs;
     static boolean showPast = false;
     static JTextArea detailsArea = new JTextArea(5, 40);
 
@@ -80,7 +81,7 @@ public class Window {
         listPanel.add(split, BorderLayout.CENTER);
         listPanel.add(buttonPanel, BorderLayout.SOUTH);
 
-        JTabbedPane tabs = new JTabbedPane();
+        tabs = new JTabbedPane();
         tabs.addTab("List", listPanel);
         tabs.addTab("Day", DayWindow.panel);
         tabs.addTab("Week", WeekWindow.panel);
@@ -135,6 +136,17 @@ public class Window {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+    }
+
+    // Called after a block is dragged: persist the tasks and redraw everything.
+    static void commitEventEdit(Event e) {
+        try {
+            Main.saveTasks(currentEvents);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        redrawAll();
+        CalendarUI.select(e); // keep the moved item selected in the details pane
     }
 
     // Re-downloads everything from the internet, then redraws. Slow — only on
@@ -203,31 +215,84 @@ public class Window {
         saveAndRefresh(model);
     }
 
+    static void toggleDone(Event e) {
+        Event target = e.sourceTask != null ? e.sourceTask : e;
+        target.done = !target.done;
+        try {
+            if (target.userAdded) {
+                Main.saveTasks(currentEvents);
+            } else if (target.done) {
+                Main.addDoneOverride(target);
+            } else {
+                Main.removeDoneOverride(target);
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        redrawAll();
+    }
+
+    static void deleteEvent(Event e) {
+        Event target = e.sourceTask != null ? e.sourceTask : e;
+        if (!target.userAdded) {
+            JOptionPane.showMessageDialog(null,
+                    "That's a calendar event — it can only be changed in Brightspace or Google.");
+            return;
+        }
+        currentEvents.remove(target);
+        saveAndRefresh(listModel);
+    }
+
+    static void goToDay(java.time.LocalDate d) {
+        DayWindow.currentDay = d;
+        DayWindow.build(currentEvents);
+        if (tabs != null) {
+            tabs.setSelectedIndex(1);
+        }
+    }
+
+    /** Opens the dialog in task mode, pre-filled with a date/time. */
+    static void newTaskAt(java.time.LocalDate date, String time) {
+        addNew(TaskDialog.open(null, date, time));
+    }
+
+    /** Opens the dialog in event mode — used by drag-to-create on the grid. */
+    static void newEventAt(java.time.LocalDate date, String startTime, String endTime) {
+        addNew(TaskDialog.open(null, date, startTime, endTime, true));
+    }
+
+    // Same, but for a whole day rather than a spot on the grid: offers an hour
+    // at the start of your day, since a button click carries no time with it.
+    static void newEventOn(java.time.LocalDate date) {
+        int startMin = Main.minutesOf(Settings.get("day_start", "08:00"));
+        if (startMin < 0) {
+            startMin = 9 * 60; // the setting was unreadable — 09:00 it is
+        }
+        newEventAt(date, Main.fmtMinutes(startMin), Main.fmtMinutes(startMin + 60));
+    }
+
+    // Saves whatever the dialog handed back, then redraws. null = cancelled.
+    private static void addNew(Event e) {
+        if (e == null) {
+            return;
+        }
+        try {
+            Main.saveNewTask(e);
+            currentEvents.add(e);
+            redrawAll();
+            CalendarUI.select(e);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    // replace the body of markDone
     static void markDone(JList<String> list, DefaultListModel<String> model) {
         int row = list.getSelectedIndex();
         if (row < 0) {
             return;
         }
-
-        Event selected = visibleEvents.get(row);
-        if (selected.sourceTask != null) {
-            selected = selected.sourceTask;
-        }
-        selected.done = !selected.done;
-
-        try {
-            if (selected.userAdded) {
-                Main.saveTasks(currentEvents);
-            } else if (selected.done) {
-                Main.addDoneOverride(selected); // now done -> remember it
-            } else {
-                Main.removeDoneOverride(selected); // now not done -> forget it
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
-
-        redraw(model);
+        toggleDone(visibleEvents.get(row));
     }
 
     static void togglePast(DefaultListModel<String> model, JButton togglePastButton) {
@@ -284,4 +349,19 @@ public class Window {
         }
     }
 
+    // Moves a work block by re-pinning it: forget where it was, remember where
+    // it landed. redrawAll then rebuilds work blocks with this pin honored.
+    static void repinWork(Event task, java.time.LocalDate oldDate, int oldStart,
+            java.time.LocalDate newDate, int newStart, int newEnd) {
+        if (task == null) {
+            return;
+        }
+        try {
+            Main.removePin(task.name, oldDate, oldStart);
+            Main.addPin(task.name, newDate, newStart, newEnd);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        redrawAll();
+    }
 }

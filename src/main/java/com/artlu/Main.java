@@ -38,6 +38,22 @@ public class Main {
         return PALETTE[Math.abs(key.hashCode()) % PALETTE.length];
     }
 
+    // Removes duplicate imported occurrences — the same event on the same day.
+    // Happens when a feed sends a modified instance of a recurring event
+    // alongside the original. Keeps the last one seen. Only safe to call while
+    // the list holds imported calendar events (before tasks are added).
+    static void dedupImported(List<Event> events) {
+        java.util.Map<String, Event> seen = new java.util.LinkedHashMap<>();
+        for (Event e : events) {
+            String key = e.uid.isBlank()
+                    ? "noid|" + e.date + "|" + e.time + "|" + e.name // no ID: fall back to details
+                    : e.uid + "|" + e.date; // normal case
+            seen.put(key, e); // same key again = overwrite, so the later copy wins
+        }
+        events.clear();
+        events.addAll(seen.values());
+    }
+
     // builds full list of events for front end
     static List<Event> buildEventList() throws Exception {
         List<Event> events = new ArrayList<>();
@@ -48,7 +64,7 @@ public class Main {
                 addEvents(link, events);
             }
         }
-
+        dedupImported(events);
         loadTasks(events);
 
         try {
@@ -61,23 +77,6 @@ public class Main {
         for (Event e : events) {
             if (!e.userAdded && doneKeys.contains(doneKey(e))) {
                 e.done = true;
-            }
-        }
-
-        // Add scheduled work blocks as events
-        if (Settings.get("auto_schedule", "true").equals("true")) {
-            for (WorkBlock w : scheduleWork(events)) {
-                Event e = new Event();
-                e.name = "Work: " + w.task.name;
-                e.date = w.date.toString();
-                e.time = w.startText();
-                e.endTime = w.endText();
-                e.endDate = w.date.toString();
-                e.kind = "work";
-                e.uid = "work|" + w.task.name;
-                e.userAdded = false;
-                e.sourceTask = w.task;
-                events.add(e);
             }
         }
 
@@ -199,7 +198,8 @@ public class Main {
     static String lineFor(Event e) {
         String safeDesc = e.description.replace("|", "/").replace("\n", " ");
         return e.name + "|" + e.date + "|" + e.time + "|" + e.done + "|"
-                + e.endDate + "|" + e.endTime + "|" + safeDesc + "|" + e.durationMin;
+                + e.endDate + "|" + e.endTime + "|" + safeDesc + "|" + e.durationMin
+                + "|" + e.kind;
     }
 
     // Reads your saved tasks back from tasks.txt
@@ -240,7 +240,8 @@ public class Main {
                 }
             }
             e.userAdded = true;
-            e.kind = "task";
+            // Lines saved before events existed have no kind field — they're tasks.
+            e.kind = parts.length >= 9 && !parts[8].isBlank() ? parts[8] : "task";
             events.add(e);
         }
     }
@@ -457,7 +458,7 @@ public class Main {
 
         // Gather free blocks for the next N days, in order
         List<FreeBlock> free = new ArrayList<>();
-        for (int i = 0; i < daysAhead; i++) {
+        for (int i = 1; i <= daysAhead; i++) {
             free.addAll(findFreeBlocks(events, LocalDate.now().plusDays(i)));
         }
 
@@ -466,7 +467,17 @@ public class Main {
         List<WorkBlock> scheduled = new ArrayList<>();
 
         for (Event task : todo) {
-            int remaining = task.durationMin > 0 ? task.durationMin : defaultDuration;
+            int base = task.durationMin > 0 ? task.durationMin : defaultDuration;
+            int pinnedMin = 0;
+            for (Event e : events) {
+                if (e.pinned && e.sourceTask != null && e.sourceTask.name.equals(task.name)) {
+                    pinnedMin += minutesOf(e.endTime) - minutesOf(e.time);
+                }
+            }
+            int remaining = base - pinnedMin;
+            if (remaining <= 0) {
+                continue; // you've manually placed the whole task already
+            }
             LocalDate deadline = LocalDate.parse(task.date);
             LocalDate earliest = deadline.minusDays(leadDays);
 
@@ -519,26 +530,127 @@ public class Main {
         return map;
     }
 
-    // Removes any existing work blocks and regenerates them from current tasks
     static void applyWorkBlocks(List<Event> events) {
         events.removeIf(e -> e.sourceTask != null);
-        if (!Settings.get("auto_schedule", "true").equals("true")) {
-            return;
+
+        // 1. Place manually pinned blocks first, so the auto-scheduler below
+        // sees them as busy time and works around them.
+        try {
+            for (Pin p : loadPins()) {
+                Event task = findTaskByName(events, p.taskName);
+                if (task == null) {
+                    continue; // the task was deleted — ignore its stale pin
+                }
+                Event e = new Event();
+                e.name = "Work: " + p.taskName;
+                e.date = p.date.toString();
+                e.endDate = p.date.toString();
+                e.time = fmtMinutes(p.startMin);
+                e.endTime = fmtMinutes(p.endMin);
+                e.kind = "work";
+                e.uid = "work|" + p.taskName;
+                e.userAdded = false;
+                e.sourceTask = task;
+                e.pinned = true;
+                events.add(e);
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
-        for (WorkBlock w : scheduleWork(events)) {
-            Event e = new Event();
-            e.name = "Work: " + w.task.name;
-            e.date = w.date.toString();
-            e.time = w.startText();
-            e.endTime = w.endText();
-            e.endDate = w.date.toString();
-            e.kind = "work";
-            e.uid = "work|" + w.task.name;
-            e.userAdded = false;
-            e.sourceTask = w.task;
-            events.add(e);
+
+        // 2. Auto-schedule whatever work is left over.
+        if (Settings.get("auto_schedule", "true").equals("true")) {
+            for (WorkBlock w : scheduleWork(events)) {
+                Event e = new Event();
+                e.name = "Work: " + w.task.name;
+                e.date = w.date.toString();
+                e.time = w.startText();
+                e.endTime = w.endText();
+                e.endDate = w.date.toString();
+                e.kind = "work";
+                e.uid = "work|" + w.task.name;
+                e.userAdded = false;
+                e.sourceTask = w.task;
+                events.add(e);
+            }
         }
         events.sort((a, b) -> whenKey(a).compareTo(whenKey(b)));
+    }
+
+    // A manually-placed work block, remembered across redraws in work-pins.txt.
+    // Tab-separated because task names can contain almost anything else.
+    static class Pin {
+        String taskName;
+        LocalDate date;
+        int startMin, endMin;
+    }
+
+    static List<Pin> loadPins() throws Exception {
+        List<Pin> pins = new ArrayList<>();
+        if (!Files.exists(Paths.get("work-pins.txt"))) {
+            return pins;
+        }
+        for (String line : Files.readAllLines(Paths.get("work-pins.txt"))) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] p = line.split("\t");
+            if (p.length < 4) {
+                continue;
+            }
+            try {
+                Pin pin = new Pin();
+                pin.taskName = p[0];
+                pin.date = LocalDate.parse(p[1]);
+                pin.startMin = Integer.parseInt(p[2]);
+                pin.endMin = Integer.parseInt(p[3]);
+                pins.add(pin);
+            } catch (Exception ignored) {
+            }
+        }
+        return pins;
+    }
+
+    static void savePins(List<Pin> pins) throws Exception {
+        List<String> lines = new ArrayList<>();
+        for (Pin p : pins) {
+            lines.add(p.taskName.replace("\t", " ") + "\t" + p.date
+                    + "\t" + p.startMin + "\t" + p.endMin);
+        }
+        Files.write(Paths.get("work-pins.txt"), lines);
+    }
+
+    static void addPin(String name, LocalDate date, int startMin, int endMin) throws Exception {
+        List<Pin> pins = loadPins();
+        Pin p = new Pin();
+        p.taskName = name;
+        p.date = date;
+        p.startMin = startMin;
+        p.endMin = endMin;
+        pins.add(p);
+        savePins(pins);
+    }
+
+    // Removes a pin by task + day + start. No-op if there wasn't one there —
+    // which is the case when you drag an auto block for the first time.
+    static void removePin(String name, LocalDate date, int startMin) throws Exception {
+        List<Pin> pins = loadPins();
+        pins.removeIf(p -> p.taskName.equals(name) && p.date.equals(date) && p.startMin == startMin);
+        savePins(pins);
+    }
+
+    static String fmtMinutes(int min) {
+        min = Math.max(0, Math.min(1439, min));
+        return String.format("%02d:%02d", min / 60, min % 60);
+    }
+
+    static Event findTaskByName(List<Event> events, String name) {
+        for (Event e : events) {
+            if (e.kind.equals("task") && e.name.equals(name)) {
+                return e;
+            }
+        }
+        return null;
     }
 
 }
@@ -558,6 +670,7 @@ class Event {
     String kind = "event";
     Event sourceTask = null;
     int durationMin = 0;
+    boolean pinned = false;
 
     boolean isDone() {
         return sourceTask != null ? sourceTask.done : done;
