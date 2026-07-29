@@ -25,6 +25,23 @@ public class TaskDialog {
     /** asEvent decides which of the two modes the form opens in. */
     static Event open(JFrame parent, LocalDate defaultDate, String defaultTime,
             String defaultEndTime, boolean asEvent) {
+        return form(parent, null, defaultDate == null ? "" : defaultDate.toString(),
+                defaultTime, defaultEndTime, asEvent);
+    }
+
+    /**
+     * Reopens the form on an item you already have. Whatever you change is
+     * written straight back into it. True if you saved, false if you cancelled.
+     */
+    static boolean edit(JFrame parent, Event existing) {
+        return form(parent, existing, existing.date, existing.time, existing.endTime,
+                existing.kind.equals("event")) != null;
+    }
+
+    // The form itself. existing == null means "make a new one".
+    private static Event form(JFrame parent, Event existing, String defaultDate,
+            String defaultTime, String defaultEndTime, boolean asEvent) {
+        boolean editing = existing != null;
         JDialog dialog = new JDialog(parent, "New Task", true);
         dialog.setLayout(new BorderLayout());
 
@@ -34,12 +51,17 @@ public class TaskDialog {
         group.add(taskMode);
         group.add(eventMode);
 
-        JTextField nameField = new JTextField();
-        JTextField dateField = new JTextField(defaultDate == null ? "" : defaultDate.toString());
+        // "no date" is how an undated task is stored — show that as an empty box
+        String dateText = defaultDate == null || defaultDate.equals("no date") ? "" : defaultDate;
+
+        JTextField nameField = new JTextField(editing ? existing.name : "");
+        JTextField dateField = new JTextField(dateText);
         JTextField timeField = new JTextField(defaultTime == null ? "" : defaultTime);
         JTextField endField = new JTextField(defaultEndTime == null ? "" : defaultEndTime);
-        JSpinner durationSpinner = new JSpinner(new SpinnerNumberModel(90, 0, 1440, 15));
+        JSpinner durationSpinner = new JSpinner(new SpinnerNumberModel(
+                editing && existing.durationMin > 0 ? existing.durationMin : 90, 0, 1440, 15));
         JTextArea descArea = new JTextArea(4, 20);
+        descArea.setText(editing ? existing.description : "");
         descArea.setLineWrap(true);
         descArea.setWrapStyleWord(true);
 
@@ -77,18 +99,50 @@ public class TaskDialog {
         // Relabels and greys out whichever fields the current mode doesn't use.
         Runnable syncMode = () -> {
             boolean ev = eventMode.isSelected();
-            dialog.setTitle(ev ? "New Event" : "New Task");
+            dialog.setTitle((editing ? "Edit " : "New ") + (ev ? "Event" : "Task"));
             dateLabel.setText(ev ? "Date (2026-08-20):" : "Due date (2026-08-20):");
             timeLabel.setText(ev ? "Start time (18:00):" : "Due time (18:00, optional):");
             endLabel.setEnabled(ev);
             endField.setEnabled(ev);
             durLabel.setEnabled(!ev);
             durationSpinner.setEnabled(!ev);
-            save.setText(ev ? "Add Event" : "Add Task");
+            save.setText(editing ? "Save changes" : ev ? "Add Event" : "Add Task");
         };
         taskMode.addActionListener(e -> syncMode.run());
         eventMode.addActionListener(e -> syncMode.run());
         syncMode.run(); // set the labels up for the mode we opened in
+
+        // Suggest a length as you type the name — until you set one yourself,
+        // after which we stop overwriting your number.
+        boolean[] youSetIt = { editing && existing.durationMin > 0 };
+        boolean[] weSetIt = { false };
+        durationSpinner.addChangeListener(changed -> {
+            if (!weSetIt[0]) {
+                youSetIt[0] = true;
+            }
+        });
+        Runnable suggest = () -> {
+            if (youSetIt[0] || eventMode.isSelected()) {
+                return;
+            }
+            weSetIt[0] = true;
+            durationSpinner.setValue(Estimator.minutesFor(nameField.getText(), Window.currentEvents));
+            weSetIt[0] = false;
+            durLabel.setText("How long will it take? (min, suggested):");
+        };
+        nameField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                suggest.run();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                suggest.run();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                suggest.run();
+            }
+        });
 
         // Holder so the listener can hand a result back out
         final Event[] result = new Event[1];
@@ -137,7 +191,8 @@ public class TaskDialog {
                 }
             }
 
-            Event item = new Event();
+            // Editing writes into the item you opened; creating fills a fresh one.
+            Event item = editing ? existing : new Event();
             item.name = name;
             item.date = date.isEmpty() ? "no date" : date;
             item.time = start;
@@ -150,6 +205,12 @@ public class TaskDialog {
             } else {
                 item.kind = "task";
                 item.durationMin = (Integer) durationSpinner.getValue();
+                // A task resized on the grid keeps that length — unless the start
+                // time you just typed lands after it, which would run backwards.
+                if (!item.endTime.isBlank() && (start.isEmpty()
+                        || Main.minutesOf(item.endTime) <= Main.minutesOf(start))) {
+                    item.endTime = "";
+                }
             }
 
             result[0] = item;

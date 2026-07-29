@@ -431,7 +431,6 @@ public class Main {
 
     // Places work blocks for upcoming tasks into free time
     static List<WorkBlock> scheduleWork(List<Event> events) {
-        int defaultDuration = Settings.getInt("default_task_minutes", 90);
         int daysAhead = Settings.getInt("schedule_days_ahead", 60);
         int leadDays = Settings.getInt("schedule_lead_days", 7);
         int maxPerDay = Settings.getInt("max_work_minutes_per_day", 240);
@@ -467,7 +466,7 @@ public class Main {
         List<WorkBlock> scheduled = new ArrayList<>();
 
         for (Event task : todo) {
-            int base = task.durationMin > 0 ? task.durationMin : defaultDuration;
+            int base = task.durationMin > 0 ? task.durationMin : Estimator.minutesFor(task.name, events);
             int pinnedMin = 0;
             for (Event e : events) {
                 if (e.pinned && e.sourceTask != null && e.sourceTask.name.equals(task.name)) {
@@ -637,6 +636,23 @@ public class Main {
         List<Pin> pins = loadPins();
         pins.removeIf(p -> p.taskName.equals(name) && p.date.equals(date) && p.startMin == startMin);
         savePins(pins);
+    }
+
+    // Pins are filed under the task's name, and applyWorkBlocks silently drops
+    // any it can't match to a task — so a rename has to bring them along or
+    // every block you dragged into place would vanish.
+    static void renamePins(String oldName, String newName) throws Exception {
+        List<Pin> pins = loadPins();
+        boolean changed = false;
+        for (Pin p : pins) {
+            if (p.taskName.equals(oldName)) {
+                p.taskName = newName;
+                changed = true;
+            }
+        }
+        if (changed) {
+            savePins(pins);
+        }
     }
 
     static String fmtMinutes(int min) {

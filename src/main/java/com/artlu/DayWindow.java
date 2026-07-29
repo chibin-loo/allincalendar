@@ -14,6 +14,7 @@ public class DayWindow {
     private static boolean built = false;
     private static List<Event> events = new ArrayList<>();
     private static CalendarUI.TimeGrid grid;
+    private static CalendarUI.AllDayHeader header;
     private static CalendarUI.Sidebar sidebar;
     private static JSplitPane split;
     private static JScrollPane scroll;
@@ -32,7 +33,9 @@ public class DayWindow {
 
     private static void chrome() {
         grid = new CalendarUI.TimeGrid(1, HOUR_HEIGHT);
+        header = new CalendarUI.AllDayHeader(grid, 1);
         scroll = new JScrollPane(grid);
+        scroll.setColumnHeaderView(header); // all-day strip, pinned above the grid
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
 
@@ -78,6 +81,7 @@ public class DayWindow {
     private static void refresh() {
         title.setText(currentDay.getDayOfWeek() + ", " + currentDay);
         grid.setEvents(currentDay, events);
+        header.setEvents(currentDay, events);
         sidebar.setMini(currentDay);
         sidebar.setDeadlines(events, currentDay, currentDay, "Due this day");
         if (scrollPending) {

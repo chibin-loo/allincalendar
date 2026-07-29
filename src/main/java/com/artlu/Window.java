@@ -2,6 +2,9 @@ package com.artlu;
 
 import javax.swing.JFrame;
 import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -88,6 +91,15 @@ public class Window {
         tabs.addTab("Month", MonthWindow.panel);
 
         frame.add(tabs, BorderLayout.CENTER);
+
+        // A menu bar gives file-level actions a home, away from the tab buttons.
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem exportItem = new JMenuItem("Export .ics...");
+        exportItem.addActionListener(clickEvent -> IcsExport.run(frame, currentEvents));
+        fileMenu.add(exportItem);
+        menuBar.add(fileMenu);
+        frame.setJMenuBar(menuBar);
 
         refreshButton.addActionListener(clickEvent -> reload(model));
         addButton.addActionListener(clickEvent -> addTask(frame, model));
@@ -243,6 +255,30 @@ public class Window {
         saveAndRefresh(listModel);
     }
 
+    // Reopens the form on an item and saves whatever changed.
+    static void editEvent(Event e) {
+        Event target = e.sourceTask != null ? e.sourceTask : e;
+        if (!target.userAdded) {
+            JOptionPane.showMessageDialog(null,
+                    "That's a calendar event — it can only be changed in Brightspace or Google.");
+            return;
+        }
+        String oldName = target.name;
+        if (!TaskDialog.edit(null, target)) {
+            return; // cancelled — nothing was touched
+        }
+        try {
+            if (!target.name.equals(oldName)) {
+                Main.renamePins(oldName, target.name);
+            }
+            Main.saveTasks(currentEvents);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        redrawAll();
+        CalendarUI.select(target);
+    }
+
     static void goToDay(java.time.LocalDate d) {
         DayWindow.currentDay = d;
         DayWindow.build(currentEvents);
@@ -337,6 +373,11 @@ public class Window {
             return;
         }
         Event selected = visibleEvents.get(row);
+        Event target = selected.sourceTask != null ? selected.sourceTask : selected;
+        if (target.userAdded) {
+            editEvent(target); // your own item — open it for editing
+            return;
+        }
         if (selected.url.isBlank()) {
             JOptionPane.showMessageDialog(null, "This item has no link to open.");
             return;
