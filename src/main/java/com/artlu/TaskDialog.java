@@ -121,7 +121,20 @@ public class TaskDialog {
                 youSetIt[0] = true;
             }
         });
+        // Same deal for task-vs-event: ours to guess until you choose. Opening
+        // straight into event mode (a drag on the grid) counts as you choosing.
+        boolean[] youPickedMode = { asEvent || editing };
+        taskMode.addActionListener(changed -> youPickedMode[0] = true);
+        eventMode.addActionListener(changed -> youPickedMode[0] = true);
+
         Runnable suggest = () -> {
+            if (!youPickedMode[0]) {
+                boolean event = Classify.looksLikeEvent(nameField.getText());
+                if (event != eventMode.isSelected()) {
+                    (event ? eventMode : taskMode).setSelected(true);
+                    syncMode.run(); // relabel for the mode we just switched to
+                }
+            }
             if (youSetIt[0] || eventMode.isSelected()) {
                 return;
             }
