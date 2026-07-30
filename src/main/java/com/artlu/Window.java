@@ -1,6 +1,7 @@
 package com.artlu;
 
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -29,6 +30,7 @@ public class Window {
     static JTabbedPane tabs;
     static boolean showPast = false;
     static JTextArea detailsArea = new JTextArea(5, 40);
+    static JLabel shortfallBanner = new JLabel();
 
     static void redrawAll() {
         redraw(listModel);
@@ -80,7 +82,17 @@ public class Window {
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, detailsScroll);
         split.setResizeWeight(0.7); // list gets 70% of the space
 
+        // Only shows up when the scheduler ran out of room — amber, not red,
+        // because this is worth knowing rather than broken.
+        shortfallBanner.setOpaque(true);
+        shortfallBanner.setBackground(new java.awt.Color(255, 244, 214));
+        shortfallBanner.setForeground(new java.awt.Color(120, 80, 0));
+        shortfallBanner.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 12));
+        shortfallBanner.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+        shortfallBanner.setVisible(false);
+
         JPanel listPanel = new JPanel(new BorderLayout());
+        listPanel.add(shortfallBanner, BorderLayout.NORTH);
         listPanel.add(split, BorderLayout.CENTER);
         listPanel.add(buttonPanel, BorderLayout.SOUTH);
 
@@ -199,11 +211,43 @@ public class Window {
             visibleEvents.add(e);
             String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
             String mark = e.isDone() ? " [done]" : "";
+            if (e.unscheduledMin > 0) {
+                mark += "   [" + Main.fmtHours(e.unscheduledMin) + " unscheduled]";
+            }
             model.addElement(when + "   " + e.name + mark);
         }
+        updateShortfallBanner();
         MonthWindow.build(currentEvents);
         DayWindow.build(currentEvents);
         WeekWindow.build(currentEvents);
+    }
+
+    // Warns when the scheduler couldn't fit everything in. Two things cause it —
+    // a genuinely full calendar, or a lead window / daily cap too tight for a big
+    // task — and the number alone can't tell them apart, so the tooltip names both.
+    static void updateShortfallBanner() {
+        int tasks = 0;
+        int minutes = 0;
+        for (Event e : currentEvents) {
+            if (e.unscheduledMin > 0) {
+                tasks++;
+                minutes += e.unscheduledMin;
+            }
+        }
+
+        if (minutes > 0) {
+            shortfallBanner.setText(tasks + (tasks == 1 ? " task doesn't" : " tasks don't")
+                    + " fully fit before its deadline — "
+                    + Main.fmtHours(minutes) + " unscheduled");
+            shortfallBanner.setToolTipText("<html>There was no free time left inside the"
+                    + " lead window before the deadline.<br>Free up time, or raise the lead"
+                    + " days / daily work cap in Settings.</html>");
+        }
+        shortfallBanner.setVisible(minutes > 0);
+
+        if (shortfallBanner.getParent() != null) {
+            shortfallBanner.getParent().revalidate(); // the row appears or collapses
+        }
     }
 
     static void removeSelected(JList<String> list, DefaultListModel<String> model) {
