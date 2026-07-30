@@ -3,6 +3,7 @@ package com.artlu;
 import javax.swing.*;
 import java.awt.*;
 import java.time.LocalDate;
+import java.util.function.Consumer;
 
 /**
  * The "new item" form. It makes two things:
@@ -84,7 +85,11 @@ public class TaskDialog {
         JLabel dateLabel = addRow(form, c, 2, "Date", dateField);
         JLabel timeLabel = addRow(form, c, 3, "Time", timeField);
         JLabel endLabel = addRow(form, c, 4, "End time", endField);
-        JLabel durLabel = addRow(form, c, 5, "How long will it take? (min)", durationSpinner);
+        JButton estimateButton = new JButton("Estimate from notes");
+        JPanel durationRow = new JPanel(new BorderLayout(6, 0));
+        durationRow.add(durationSpinner, BorderLayout.CENTER);
+        durationRow.add(estimateButton, BorderLayout.EAST);
+        JLabel durLabel = addRow(form, c, 5, "How long will it take? (min)", durationRow);
         addRow(form, c, 6, "Notes (optional)", new JScrollPane(descArea));
 
         dialog.add(form, BorderLayout.CENTER);
@@ -106,6 +111,9 @@ public class TaskDialog {
             endField.setEnabled(ev);
             durLabel.setEnabled(!ev);
             durationSpinner.setEnabled(!ev);
+            // nothing to estimate from without notes, and no way to ask without a key
+            estimateButton.setEnabled(!ev && AiDuration.configured()
+                    && !descArea.getText().isBlank());
             save.setText(editing ? "Save changes" : ev ? "Add Event" : "Add Task");
         };
         taskMode.addActionListener(e -> syncMode.run());
@@ -154,6 +162,87 @@ public class TaskDialog {
 
             public void changedUpdate(javax.swing.event.DocumentEvent e) {
                 suggest.run();
+            }
+        });
+
+        // Typing notes can enable the estimate button, so re-check on every change.
+        descArea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                syncMode.run();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                syncMode.run();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                syncMode.run();
+            }
+        });
+
+        // Shared by the button and, when the setting is on, by finishing the notes.
+        // quiet means it fired on its own, so failures stay silent rather than
+        // popping a dialog at someone who never asked for an estimate.
+        boolean[] estimatedAlready = { false };
+        Consumer<Boolean> runEstimate = quiet -> {
+            estimatedAlready[0] = true;
+            estimateButton.setEnabled(false);
+            estimateButton.setText("Estimating...");
+
+            // doInBackground runs off the UI thread, so the dialog stays alive
+            // while we wait; done runs back on it, so touching the spinner is safe.
+            new SwingWorker<Integer, Void>() {
+                protected Integer doInBackground() throws Exception {
+                    return AiDuration.minutesFor(nameField.getText(), descArea.getText());
+                }
+
+                protected void done() {
+                    estimateButton.setText("Estimate from notes");
+                    syncMode.run(); // re-enable it if it still applies
+                    try {
+                        int minutes = get();
+                        if (minutes <= 0) {
+                            if (!quiet) {
+                                JOptionPane.showMessageDialog(dialog,
+                                        "The model didn't reply with a usable number."
+                                                + " Try giving the notes a bit more detail.");
+                            }
+                            return;
+                        }
+                        youSetIt[0] = true; // keyword guesses stop overriding this
+                        weSetIt[0] = true;
+                        durationSpinner.setValue(minutes);
+                        weSetIt[0] = false;
+                        durLabel.setText("How long will it take? (min, estimated):");
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        if (!quiet) {
+                            JOptionPane.showMessageDialog(dialog,
+                                    "Couldn't get an estimate — see the console."
+                                            + " Your keyword estimate still applies.");
+                        }
+                    }
+                }
+            }.execute();
+        };
+
+        estimateButton.addActionListener(clicked -> runEstimate.accept(false));
+
+        // With the setting switched on, estimate once you've finished the notes —
+        // leaving the field is the signal. Once per dialog; the button is there
+        // if you want to run it again.
+        descArea.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (estimatedAlready[0] || youSetIt[0] || eventMode.isSelected()) {
+                    return;
+                }
+                if (!Settings.get("ai_estimates", "false").equals("true")) {
+                    return;
+                }
+                if (!AiDuration.configured() || descArea.getText().isBlank()) {
+                    return;
+                }
+                runEstimate.accept(true);
             }
         });
 

@@ -22,6 +22,7 @@ public class SettingsWindow {
         tabs.addTab("Calendars", wrap(calendarsSection()));
         tabs.addTab("Gradescope", wrap(gradescopeSection()));
         tabs.addTab("Scheduling", wrap(schedulingSection()));
+        tabs.addTab("AI", wrap(aiSection()));
         tabs.addTab("Display", wrap(displaySection()));
         dialog.add(tabs, BorderLayout.CENTER);
 
@@ -76,6 +77,8 @@ public class SettingsWindow {
     static JPanel schedulingSection() {
         JPanel p = newPanel();
         addBool(p, "auto_schedule", "Automatically schedule work blocks", true);
+        addBool(p, "ai_estimates", "Use AI to estimate length from a task's notes", false);
+        addNote(p, "Needs a key on the AI tab. Off, or with no key, lengths come from keywords.");
         addTime(p, "day_start", "Earliest work time", "08:00");
         addTime(p, "day_end", "Latest work time", "22:00");
         addInt(p, "default_task_minutes", "Default task length (min)", 90, 15, 600, 15);
@@ -86,6 +89,18 @@ public class SettingsWindow {
         addInt(p, "schedule_lead_days", "Start work within (days) of due date", 7, 1, 90, 1);
         addInt(p, "schedule_days_ahead", "Plan ahead (days)", 60, 7, 365, 7);
         addDays(p, "no_work_days", "Never schedule on");
+        return p;
+    }
+
+    static JPanel aiSection() {
+        JPanel p = newPanel();
+        addNote(p, "<html>Optional. A free key from console.groq.com (no card needed) lets the"
+                + " task form estimate<br>how long something takes from the notes you write."
+                + " Without a key nothing breaks —<br>lengths are guessed from keywords, exactly"
+                + " as they are now.</html>");
+        addPassword(p, "ai_api_key", "API key");
+        addText(p, "ai_model", "Model", AiDuration.DEFAULT_MODEL);
+        addText(p, "ai_url", "API URL", AiDuration.DEFAULT_URL);
         return p;
     }
 
@@ -150,7 +165,11 @@ public class SettingsWindow {
     }
 
     static void addText(JPanel p, String key, String label) {
-        JTextField box = new JTextField(Settings.get(key, ""));
+        addText(p, key, label, "");
+    }
+
+    static void addText(JPanel p, String key, String label, String fallback) {
+        JTextField box = new JTextField(Settings.get(key, fallback));
         addRow(p, label, box);
         readers.put(key, () -> box.getText().trim());
     }
