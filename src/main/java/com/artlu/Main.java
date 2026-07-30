@@ -480,40 +480,53 @@ public class Main {
             LocalDate deadline = LocalDate.parse(task.date);
             LocalDate earliest = deadline.minusDays(profile.leadDays);
 
-            for (FreeBlock block : free) {
-                if (remaining <= 0) {
-                    break;
-                }
-                if (block.date.isBefore(earliest)) {
-                    continue;
-                }
-                if (block.date.isAfter(deadline)) {
-                    break; // too late to help
-                }
-                if (block.lengthMin() <= 0) {
-                    continue; // already used up
-                }
+            // Two passes. The first gives this task at most one session a day, so
+            // a long job spreads across its lead window instead of cramming into
+            // the first days of it. If that can't get the work done before the
+            // deadline, the second pass drops the restriction and packs it in.
+            for (int pass = 0; pass < 2 && remaining > 0; pass++) {
+                boolean oneSessionPerDay = (pass == 0);
+                java.util.Set<LocalDate> daysTouched = new java.util.HashSet<>();
 
-                int usedToday = usedPerDay.getOrDefault(block.date, 0);
-                int dayCapacity = maxPerDay - usedToday;
-                if (dayCapacity <= 0)
-                    continue;
-                int use = Math.min(remaining, block.lengthMin());
-                use = Math.min(use, dayCapacity); // respect the daily cap
-                use = Math.min(use, profile.chunkMinutes); // no marathon blocks
-                if (use <= 0)
-                    continue;
+                for (FreeBlock block : free) {
+                    if (remaining <= 0) {
+                        break;
+                    }
+                    if (block.date.isBefore(earliest)) {
+                        continue;
+                    }
+                    if (block.date.isAfter(deadline)) {
+                        break; // too late to help
+                    }
+                    if (block.lengthMin() <= 0) {
+                        continue; // already used up
+                    }
+                    if (oneSessionPerDay && daysTouched.contains(block.date)) {
+                        continue; // this task already had its session today
+                    }
 
-                WorkBlock w = new WorkBlock();
-                w.date = block.date;
-                w.startMin = block.startMin;
-                w.endMin = block.startMin + use;
-                w.task = task;
-                scheduled.add(w);
+                    int usedToday = usedPerDay.getOrDefault(block.date, 0);
+                    int dayCapacity = maxPerDay - usedToday;
+                    if (dayCapacity <= 0)
+                        continue;
+                    int use = Math.min(remaining, block.lengthMin());
+                    use = Math.min(use, dayCapacity); // respect the daily cap
+                    use = Math.min(use, profile.chunkMinutes); // no marathon blocks
+                    if (use <= 0)
+                        continue;
 
-                block.startMin += use + breakMin; // consume it plus a breather
-                remaining -= use;
-                usedPerDay.put(block.date, usedToday + use);
+                    WorkBlock w = new WorkBlock();
+                    w.date = block.date;
+                    w.startMin = block.startMin;
+                    w.endMin = block.startMin + use;
+                    w.task = task;
+                    scheduled.add(w);
+
+                    block.startMin += use + breakMin; // consume it plus a breather
+                    remaining -= use;
+                    usedPerDay.put(block.date, usedToday + use);
+                    daysTouched.add(block.date);
+                }
             }
 
             // Whatever is still left never found a slot. Remember it so the UI
