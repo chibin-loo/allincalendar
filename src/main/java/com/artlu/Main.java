@@ -431,12 +431,10 @@ public class Main {
 
     // Places work blocks for upcoming tasks into free time
     static List<WorkBlock> scheduleWork(List<Event> events) {
-        int defaultDuration = Settings.getInt("default_task_minutes", 90);
         int daysAhead = Settings.getInt("schedule_days_ahead", 60);
-        int leadDays = Settings.getInt("schedule_lead_days", 7);
         int maxPerDay = Settings.getInt("max_work_minutes_per_day", 240);
-        int maxChunk = Settings.getInt("max_block_minutes", 120);
         int breakMin = Settings.getInt("break_minutes", 15);
+        // lead time and session length are per-task now — see Estimator.profile
 
         // Which items need work scheduled: not done, has a date, in the future
         List<Event> todo = new ArrayList<>();
@@ -467,7 +465,8 @@ public class Main {
         List<WorkBlock> scheduled = new ArrayList<>();
 
         for (Event task : todo) {
-            int base = task.durationMin > 0 ? task.durationMin : defaultDuration;
+            Profile profile = Estimator.profile(task.name, events);
+            int base = task.durationMin > 0 ? task.durationMin : profile.minutes;
             int pinnedMin = 0;
             for (Event e : events) {
                 if (e.pinned && e.sourceTask != null && e.sourceTask.name.equals(task.name)) {
@@ -479,7 +478,7 @@ public class Main {
                 continue; // you've manually placed the whole task already
             }
             LocalDate deadline = LocalDate.parse(task.date);
-            LocalDate earliest = deadline.minusDays(leadDays);
+            LocalDate earliest = deadline.minusDays(profile.leadDays);
 
             for (FreeBlock block : free) {
                 if (remaining <= 0) {
@@ -501,7 +500,7 @@ public class Main {
                     continue;
                 int use = Math.min(remaining, block.lengthMin());
                 use = Math.min(use, dayCapacity); // respect the daily cap
-                use = Math.min(use, maxChunk); // no marathon blocks
+                use = Math.min(use, profile.chunkMinutes); // no marathon blocks
                 if (use <= 0)
                     continue;
 
@@ -516,6 +515,10 @@ public class Main {
                 remaining -= use;
                 usedPerDay.put(block.date, usedToday + use);
             }
+
+            // Whatever is still left never found a slot. Remember it so the UI
+            // can say so, instead of quietly dropping the work.
+            task.unscheduledMin = Math.max(0, remaining);
         }
 
         return scheduled;
@@ -532,6 +535,9 @@ public class Main {
 
     static void applyWorkBlocks(List<Event> events) {
         events.removeIf(e -> e.sourceTask != null);
+        for (Event e : events) {
+            e.unscheduledMin = 0; // recomputed by scheduleWork below
+        }
 
         // 1. Place manually pinned blocks first, so the auto-scheduler below
         // sees them as busy time and works around them.
@@ -639,6 +645,36 @@ public class Main {
         savePins(pins);
     }
 
+    // Pins are filed under the task's name, and applyWorkBlocks silently drops
+    // any it can't match to a task — so a rename has to bring them along or
+    // every block you dragged into place would vanish.
+    static void renamePins(String oldName, String newName) throws Exception {
+        List<Pin> pins = loadPins();
+        boolean changed = false;
+        for (Pin p : pins) {
+            if (p.taskName.equals(oldName)) {
+                p.taskName = newName;
+                changed = true;
+            }
+        }
+        if (changed) {
+            savePins(pins);
+        }
+    }
+
+    // A duration in words: 45 -> "45m", 120 -> "2h", 510 -> "8h 30m"
+    static String fmtHours(int min) {
+        int hours = min / 60;
+        int minutes = min % 60;
+        if (hours == 0) {
+            return minutes + "m";
+        }
+        if (minutes == 0) {
+            return hours + "h";
+        }
+        return hours + "h " + minutes + "m";
+    }
+
     static String fmtMinutes(int min) {
         min = Math.max(0, Math.min(1439, min));
         return String.format("%02d:%02d", min / 60, min % 60);
@@ -671,6 +707,7 @@ class Event {
     Event sourceTask = null;
     int durationMin = 0;
     boolean pinned = false;
+    int unscheduledMin = 0; // work the scheduler couldn't find room for
 
     boolean isDone() {
         return sourceTask != null ? sourceTask.done : done;

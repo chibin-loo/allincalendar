@@ -149,6 +149,10 @@ public class CalendarUI {
 
         if (target.userAdded) {
             menu.addSeparator();
+            JMenuItem edit = new JMenuItem("Edit…");
+            edit.addActionListener(a -> Window.editEvent(target));
+            menu.add(edit);
+
             JMenuItem del = new JMenuItem(target.kind.equals("event") ? "Delete event" : "Delete task");
             del.addActionListener(a -> Window.deleteEvent(target));
             menu.add(del);
@@ -175,7 +179,13 @@ public class CalendarUI {
                 }
                 select(e);
                 if (me.getClickCount() == 2) {
-                    openLink(e);
+                    // your own item opens for editing; an imported one opens its link
+                    Event target = e.sourceTask != null ? e.sourceTask : e;
+                    if (target.userAdded) {
+                        Window.editEvent(target);
+                    } else {
+                        openLink(e);
+                    }
                 }
             }
 

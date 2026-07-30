@@ -1,7 +1,11 @@
 package com.artlu;
 
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -26,6 +30,7 @@ public class Window {
     static JTabbedPane tabs;
     static boolean showPast = false;
     static JTextArea detailsArea = new JTextArea(5, 40);
+    static JLabel shortfallBanner = new JLabel();
 
     static void redrawAll() {
         redraw(listModel);
@@ -77,7 +82,17 @@ public class Window {
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, detailsScroll);
         split.setResizeWeight(0.7); // list gets 70% of the space
 
+        // Only shows up when the scheduler ran out of room — amber, not red,
+        // because this is worth knowing rather than broken.
+        shortfallBanner.setOpaque(true);
+        shortfallBanner.setBackground(new java.awt.Color(255, 244, 214));
+        shortfallBanner.setForeground(new java.awt.Color(120, 80, 0));
+        shortfallBanner.setFont(new java.awt.Font("Segoe UI", java.awt.Font.PLAIN, 12));
+        shortfallBanner.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+        shortfallBanner.setVisible(false);
+
         JPanel listPanel = new JPanel(new BorderLayout());
+        listPanel.add(shortfallBanner, BorderLayout.NORTH);
         listPanel.add(split, BorderLayout.CENTER);
         listPanel.add(buttonPanel, BorderLayout.SOUTH);
 
@@ -88,6 +103,15 @@ public class Window {
         tabs.addTab("Month", MonthWindow.panel);
 
         frame.add(tabs, BorderLayout.CENTER);
+
+        // A menu bar gives file-level actions a home, away from the tab buttons.
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem exportItem = new JMenuItem("Export .ics...");
+        exportItem.addActionListener(clickEvent -> IcsExport.run(frame, currentEvents));
+        fileMenu.add(exportItem);
+        menuBar.add(fileMenu);
+        frame.setJMenuBar(menuBar);
 
         refreshButton.addActionListener(clickEvent -> reload(model));
         addButton.addActionListener(clickEvent -> addTask(frame, model));
@@ -187,11 +211,43 @@ public class Window {
             visibleEvents.add(e);
             String when = e.time.isBlank() ? e.date : (e.date + " " + e.time);
             String mark = e.isDone() ? " [done]" : "";
+            if (e.unscheduledMin > 0) {
+                mark += "   [" + Main.fmtHours(e.unscheduledMin) + " unscheduled]";
+            }
             model.addElement(when + "   " + e.name + mark);
         }
+        updateShortfallBanner();
         MonthWindow.build(currentEvents);
         DayWindow.build(currentEvents);
         WeekWindow.build(currentEvents);
+    }
+
+    // Warns when the scheduler couldn't fit everything in. Two things cause it —
+    // a genuinely full calendar, or a lead window / daily cap too tight for a big
+    // task — and the number alone can't tell them apart, so the tooltip names both.
+    static void updateShortfallBanner() {
+        int tasks = 0;
+        int minutes = 0;
+        for (Event e : currentEvents) {
+            if (e.unscheduledMin > 0) {
+                tasks++;
+                minutes += e.unscheduledMin;
+            }
+        }
+
+        if (minutes > 0) {
+            shortfallBanner.setText(tasks + (tasks == 1 ? " task doesn't" : " tasks don't")
+                    + " fully fit before its deadline — "
+                    + Main.fmtHours(minutes) + " unscheduled");
+            shortfallBanner.setToolTipText("<html>There was no free time left inside the"
+                    + " lead window before the deadline.<br>Free up time, or raise the lead"
+                    + " days / daily work cap in Settings.</html>");
+        }
+        shortfallBanner.setVisible(minutes > 0);
+
+        if (shortfallBanner.getParent() != null) {
+            shortfallBanner.getParent().revalidate(); // the row appears or collapses
+        }
     }
 
     static void removeSelected(JList<String> list, DefaultListModel<String> model) {
@@ -241,6 +297,30 @@ public class Window {
         }
         currentEvents.remove(target);
         saveAndRefresh(listModel);
+    }
+
+    // Reopens the form on an item and saves whatever changed.
+    static void editEvent(Event e) {
+        Event target = e.sourceTask != null ? e.sourceTask : e;
+        if (!target.userAdded) {
+            JOptionPane.showMessageDialog(null,
+                    "That's a calendar event — it can only be changed in Brightspace or Google.");
+            return;
+        }
+        String oldName = target.name;
+        if (!TaskDialog.edit(null, target)) {
+            return; // cancelled — nothing was touched
+        }
+        try {
+            if (!target.name.equals(oldName)) {
+                Main.renamePins(oldName, target.name);
+            }
+            Main.saveTasks(currentEvents);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        redrawAll();
+        CalendarUI.select(target);
     }
 
     static void goToDay(java.time.LocalDate d) {
@@ -337,6 +417,11 @@ public class Window {
             return;
         }
         Event selected = visibleEvents.get(row);
+        Event target = selected.sourceTask != null ? selected.sourceTask : selected;
+        if (target.userAdded) {
+            editEvent(target); // your own item — open it for editing
+            return;
+        }
         if (selected.url.isBlank()) {
             JOptionPane.showMessageDialog(null, "This item has no link to open.");
             return;
